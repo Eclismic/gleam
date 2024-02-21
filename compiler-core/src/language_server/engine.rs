@@ -26,6 +26,7 @@ use super::{
 };
 
 mod inline_var_handler;
+mod pipeline_handler;
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Response<T> {
@@ -251,6 +252,7 @@ where
 
             code_action_unused_imports(module, &params, &mut actions);
             inline_var_handler::inline_local_variable(module, &params, &mut actions);
+            pipeline_handler::convert_to_pipeline(module, &params, &mut actions);
 
             Ok(if actions.is_empty() {
                 None

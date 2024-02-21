@@ -1,6 +1,6 @@
-mod action;
 mod compilation;
 mod completion;
+mod convert_to_pipeline;
 mod hover;
 mod inline_var_action;
 
