@@ -24,7 +24,7 @@ pub fn convert_to_pipeline(
     let mut call_chain: Vec<&TypedExpr> = Vec::new();
     detect_call_chain_conversion_to_pipeline(call_expression, &mut call_chain);
 
-    if call_chain.is_empty() {
+    if call_chain.is_empty() || call_chain.len() < 2 {
         return;
     }
 
@@ -33,7 +33,8 @@ pub fn convert_to_pipeline(
 
     let indent = line_numbers.line_and_column_number(location).column - 1;
 
-    let edit: lsp_types::TextEdit = create_edit(pipeline_parts, line_numbers, indent).unwrap();
+    let edit: lsp_types::TextEdit = create_edit(pipeline_parts, line_numbers, indent)
+        .expect("pipeline to be converted to edit");
 
     CodeActionBuilder::new("Apply Pipeline Rewrite")
         .kind(lsp_types::CodeActionKind::REFACTOR_REWRITE)
@@ -69,12 +70,12 @@ fn create_edit(
     }
 
     // let mut input_pipeline_str = EcoString::new();
-    
+
     // input_pipeline_str.push_str(&format!("{} \n", pipeline_parts.input));
 
     Some(lsp::TextEdit {
         range: src_span_to_lsp_range(pipeline_parts.location, &line_numbers),
-       // new_text: (input_pipeline_str + edit_str).to_string(),
+        // new_text: (input_pipeline_str + edit_str).to_string(),
         new_text: edit_str.to_string(),
     })
 }
@@ -144,7 +145,7 @@ fn convert_call_chain_to_pipeline(mut call_chain: Vec<&TypedExpr>) -> Option<Pip
             } else {
                 first_chain.to_string()
             }
-        },
+        }
         _ => return None,
     }?;
 
