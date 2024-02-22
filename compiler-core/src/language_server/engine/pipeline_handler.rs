@@ -33,7 +33,6 @@ pub fn convert_to_pipeline(
 
     let indent = line_numbers.line_and_column_number(location).column - 1;
 
-    //misschien toch onderscheid maken tussen indent bij assign en expression
     let edit: lsp_types::TextEdit = create_edit(pipeline_parts, line_numbers, indent).unwrap();
 
     CodeActionBuilder::new("Apply Pipeline Rewrite")
@@ -50,6 +49,8 @@ fn create_edit(
 ) -> Option<lsp::TextEdit> {
     let mut edit_str = EcoString::new();
 
+    edit_str.push_str(&format!("{} \n", pipeline_parts.input));
+
     if let Err(()) = pipeline_parts
         .calls
         .iter()
@@ -59,7 +60,6 @@ fn create_edit(
                     edit_str.push(' ');
                 }
                 edit_str.push_str(&format!("|> {}\n", s));
-                dbg!(&edit_str);
                 Ok(())
             }
             None => Err(()),
@@ -68,15 +68,14 @@ fn create_edit(
         return None;
     }
 
-    let mut input_pipeline_str = EcoString::new();
-    // for _ in 0..indent {
-    //     input_pipeline_str.push(' ');
-    // }
-    input_pipeline_str.push_str(&format!("{} \n", pipeline_parts.input));
+    // let mut input_pipeline_str = EcoString::new();
+    
+    // input_pipeline_str.push_str(&format!("{} \n", pipeline_parts.input));
 
     Some(lsp::TextEdit {
         range: src_span_to_lsp_range(pipeline_parts.location, &line_numbers),
-        new_text: (input_pipeline_str + edit_str).to_string(),
+       // new_text: (input_pipeline_str + edit_str).to_string(),
+        new_text: edit_str.to_string(),
     })
 }
 
@@ -104,28 +103,9 @@ fn detect_call_chain_conversion_to_pipeline<'a>(
 fn convert_call_chain_to_pipeline(mut call_chain: Vec<&TypedExpr>) -> Option<PipelineParts> {
     call_chain.reverse();
 
-    // let mut modified_chain: Vec<TypedExpr> = Vec::with_capacity(call_chain.len());
-
-    // let first_chain = call_chain.first().expect("there should be a first");
-
-    // match first_chain {
-    //     TypedExpr::Call {
-    //         location,
-    //         typ,
-    //         fun,
-    //         args,
-    //     } => {
-    //         if let Some(callarg) = args.first(){
-
-    //         }
-    //     },
-    //     _ => todo!(),
-    // }
-
     let modified_chain: Vec<_> = call_chain
         .iter()
-        //.skip(1)
-        .map(|expr| {
+        .filter_map(|expr| {
             if let TypedExpr::Call {
                 location,
                 typ,
@@ -144,18 +124,18 @@ fn convert_call_chain_to_pipeline(mut call_chain: Vec<&TypedExpr>) -> Option<Pip
                         args: new_args,
                     })
                 } else {
+                    //call without args; no need to remove the first arg
+                    //this is probably the input to the pipeline
                     None
                 }
             } else {
                 None
             }
         })
-        .filter_map(|x| x) //CHANGE THIS
+        //.filter_map(|x| x) //CHANGE THIS
         .collect();
 
     let first_chain = call_chain.first().expect("There is a first element");
-
-    dbg!(&modified_chain);
 
     let input = match first_chain {
         TypedExpr::Call { args, .. } => {
@@ -164,11 +144,9 @@ fn convert_call_chain_to_pipeline(mut call_chain: Vec<&TypedExpr>) -> Option<Pip
             } else {
                 first_chain.to_string()
             }
-        }
+        },
         _ => return None,
     }?;
-
-    dbg!(&input);
 
     Some(PipelineParts {
         input: input,

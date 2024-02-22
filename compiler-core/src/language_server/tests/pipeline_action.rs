@@ -175,7 +175,7 @@ fn apply_code_edit(
 }
 
 #[test]
-fn test_converting_assign_to_pipeline() {
+fn test_simple() {
     assert_code_action!(
         r#"
 import list
@@ -189,7 +189,7 @@ fn main() {
     );
 }
 #[test]
-fn test_converting_assign_to_pipeline2() {
+fn test_converting_assign_to_pipeline() {
     assert_code_action!(
         r#"
 import list
@@ -204,7 +204,7 @@ fn main() {
 }
 
 #[test]
-fn test_suggest_pipeline_assignment_func_chaining_func_as_input_pipeline() {
+fn test_conversion_to_pipeline_with_call_as_input() {
     assert_code_action!(
         r#"
 import list
@@ -224,21 +224,6 @@ fn add1(i: Int) -> Int{
         Position::new(4, 15),
         Position::new(4, 63)
     );
-    // With Pipeline Operator
-    //     let expected = "
-    // import list
-
-    // fn main() {
-    //   let result =
-    // buildlist()
-    // |> list.map(fn(x) { x * 2 })
-    // |> list.reverse()
-    // }
-
-    // fn buildlist() -> List(Int) {
-    //   [1, 2, 3]
-    // }
-    // ";
 }
 
 #[test]
@@ -255,55 +240,3 @@ fn main() {
         Position::new(4, 47)
     );
 }
-
-// #[test]
-// fn test_converting_assign_to_pipeline() {
-//     assert_code_action!(
-//         r#"
-// import list
-
-// fn main() {
-//   let result = list.reverse(list.map([1,2,3], fn(x) {x * 2}))
-// }
-// "#,
-//         Position::new(4, 2),
-//         Position::new(4, 61)
-//     );
-// }
-
-// #[test]
-// fn test_converting_expr_to_pipeline() {
-//     assert_code_action!(
-//         r#"
-// import list
-
-// fn main() {
-//   list.reverse(list.map([1,2,3], fn(x) {x * 2}))
-// }
-// "#,
-//         Position::new(4, 2),
-//         Position::new(4, 47)
-//     );
-// }
-
-//1)
-//wat te doen wanneer een function call meerdere argumenten heeft?
-//string_builder.do_stuff(string_builder.reverse(string_builder.from_string(string)), add('x'))
-
-//2)
-//Kijken naar een testsituatie waarbij het niet lukt om een typedexpr te converteren naar string.
-// Geen implementatie voor het to_string'en van fn(x,y) {x + y}
-// #[test]
-// fn test_converting_assign_to_pipeline() {
-//     assert_code_action!(
-//         r#"
-// import list
-
-// fn main() {
-//   let result = list.reverse(list.map2([1,2,3], [4,5,6], fn(x,y) {x + y}))
-// }
-// "#,
-//         Position::new(4, 2),
-//         Position::new(4, 61)
-//     );
-// }
