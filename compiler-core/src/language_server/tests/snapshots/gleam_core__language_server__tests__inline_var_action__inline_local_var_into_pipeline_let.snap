@@ -1,6 +1,6 @@
 ---
 source: compiler-core/src/language_server/tests/inline_var_action.rs
-expression: "\nimport list\n\nfn main() {\n  let x = [1,2,3]\n  let result =\n  x\n  |> list.reverse()\n  |> list.map(fn(x) { x * 2})\n}\n        "
+expression: "\nimport list\n\nfn main() {\n  let x = [1,2,3]\n  let result =\n  x\n  |> list.reverse()\n  |> list.map(fn(x) { x * 2})\n}\n    "
 ---
 
 import list
@@ -12,4 +12,4 @@ fn main() {
   |> list.reverse()
   |> list.map(fn(x) { x * 2})
 }
-        
+    
