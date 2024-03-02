@@ -13,25 +13,11 @@ pub fn inline_local_variable(
     let byte_index = line_numbers.byte_index(params.range.start.line, params.range.start.character);
 
     let edits = match module.find_node(byte_index) {
-        Some(Located::Expression(e)) => {
-            if let Some(Definition::Function(f)) =
-                module.ast.find_containing_definition_for_node(byte_index)
-            {
-                inline_usage(e, f, line_numbers, module)
-            } else {
-                None
-            }
-        }
+        Some(Located::Expression(e)) => inline_usage(e, line_numbers, module, byte_index),
         Some(Located::Statement(Statement::Assignment(a)))
             if matches!(a.pattern, Pattern::Variable { .. }) =>
         {
-            if let Some(Definition::Function(f)) =
-                module.ast.find_containing_definition_for_node(byte_index)
-            {
-                inline_let(&a, f, line_numbers)
-            } else {
-                None
-            }
+            inline_let(&a, line_numbers, module, byte_index)
         }
         _ => None,
     };
@@ -47,17 +33,21 @@ pub fn inline_local_variable(
 
 fn inline_usage(
     e: &TypedExpr,
-    f: &Function<Arc<Type>, TypedExpr>,
     line_numbers: LineNumbers,
     module: &Module,
+    byte_index: u32,
 ) -> Option<Vec<lsp_types::TextEdit>> {
-    if let Some(let_loc) = e.definition_location() {
-        let let_loc = module.find_node(let_loc.span.start);
-        if let Some(let_loc) = let_loc {
-            if let Located::Statement(Statement::Assignment(let_assignment)) = let_loc {
-                let let_val = &*let_assignment.value;
-                let let_val_str = let_val.to_string()?;
+    if let Some(let_loc) = e
+        .definition_location()
+        .and_then(|def_loc| module.find_node(def_loc.span.start))
+    {
+        if let Located::Statement(Statement::Assignment(let_assignment)) = let_loc {
+            let let_val = &*let_assignment.value;
+            let let_val_str = let_val.to_string()?;
 
+            if let Some(Definition::Function(f)) =
+                module.ast.find_containing_definition_for_node(byte_index)
+            {
                 let usages: Vec<_> = f
                     .body
                     .iter()
@@ -70,14 +60,14 @@ fn inline_usage(
 
                 let delete_let = usages.len() == 1;
 
-                let mut edits: Vec<lsp_types::TextEdit> = Vec::new();
-
-                if delete_let {
-                    edits.push(lsp_types::TextEdit {
+                let mut edits: Vec<lsp_types::TextEdit> = if delete_let {
+                    vec![lsp_types::TextEdit {
                         range: src_span_to_lsp_range(let_assignment.location, &line_numbers),
                         new_text: "".into(),
-                    });
-                }
+                    }]
+                } else {
+                    vec![]
+                };
 
                 edits.push(lsp_types::TextEdit {
                     range: src_span_to_lsp_range(e.location(), &line_numbers),
@@ -93,39 +83,45 @@ fn inline_usage(
 
 fn inline_let(
     assignment: &Assignment<Arc<Type>, TypedExpr>,
-    f: &Function<Arc<Type>, TypedExpr>,
     line_numbers: LineNumbers,
+    module: &Module,
+    byte_index: u32,
 ) -> Option<Vec<lsp_types::TextEdit>> {
-    let usages: Vec<_> = f
-        .body
-        .iter()
-        .filter_map(|statement| match statement {
-            Statement::Expression(e) => usage_search(&assignment.pattern, e),
-            Statement::Assignment(a) => usage_search(&assignment.pattern, &a.value),
-            Statement::Use(_) => None,
-        })
-        .flatten()
-        .collect();
+    match module.ast.find_containing_definition_for_node(byte_index)? {
+        Definition::Function(f) => {
+            let usages: Vec<_> = f
+                .body
+                .iter()
+                .filter_map(|statement| match statement {
+                    Statement::Expression(e) => usage_search(&assignment.pattern, e),
+                    Statement::Assignment(a) => usage_search(&assignment.pattern, &a.value),
+                    Statement::Use(_) => None,
+                })
+                .flatten()
+                .collect();
 
-    if usages.is_empty() {
-        cov_mark::hit!(test_inline_local_var_do_not_inline_unused_var);
-        return None;
+            if usages.is_empty() {
+                cov_mark::hit!(test_inline_local_var_do_not_inline_unused_var);
+                return None;
+            }
+
+            let value_to_inline = assignment.value.to_string()?;
+
+            let mut edits: Vec<lsp_types::TextEdit> = Vec::with_capacity(usages.len() + 1);
+            edits.push(lsp_types::TextEdit {
+                range: src_span_to_lsp_range(assignment.location, &line_numbers),
+                new_text: "".into(),
+            });
+
+            edits.extend(usages.iter().map(|usage| lsp_types::TextEdit {
+                range: src_span_to_lsp_range(usage.location(), &line_numbers),
+                new_text: value_to_inline.to_string(),
+            }));
+
+            Some(edits)
+        }
+        _ => None,
     }
-
-    let value_to_inline = assignment.value.to_string()?;
-
-    let mut edits: Vec<lsp_types::TextEdit> = Vec::with_capacity(usages.len() + 1);
-    edits.push(lsp_types::TextEdit {
-        range: src_span_to_lsp_range(assignment.location, &line_numbers),
-        new_text: "".into(),
-    });
-
-    edits.extend(usages.iter().map(|usage| lsp_types::TextEdit {
-        range: src_span_to_lsp_range(usage.location(), &line_numbers),
-        new_text: value_to_inline.to_string(),
-    }));
-
-    Some(edits)
 }
 
 fn usage_search<'a>(
@@ -134,23 +130,21 @@ fn usage_search<'a>(
 ) -> Option<Vec<&'a TypedExpr>> {
     match expr {
         TypedExpr::Block { statements, .. } => {
-            let mut results = vec![];
-            for statement in statements {
-                match statement {
-                    Statement::Expression(e) => {
-                        if let Some(exprs) = usage_search(pattern, e) {
-                            results.extend(exprs);
-                        }
-                    }
-                    Statement::Assignment(a) => {
-                        if let Some(exprs) = usage_search(pattern, &a.value) {
-                            results.extend(exprs);
-                        }
-                    }
-                    Statement::Use(_) => {}
-                }
+            let res: Vec<_> = statements
+                .iter()
+                .filter_map(|statement| match statement {
+                    Statement::Expression(e) => usage_search(pattern, e),
+                    Statement::Assignment(a) => usage_search(pattern, &a.value),
+                    Statement::Use(_) => None,
+                })
+                .flatten()
+                .collect();
+
+            if res.is_empty() {
+                None
+            } else {
+                Some(res)
             }
-            Some(results)
         }
         TypedExpr::Pipeline {
             assignments,
