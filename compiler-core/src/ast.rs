@@ -52,6 +52,19 @@ impl TypedModule {
             .iter()
             .find_map(|statement| statement.find_node(byte_index))
     }
+
+    pub fn find_containing_definition_for_node(
+        &self,
+        byte_index: u32,
+    ) -> Option<&Definition<Arc<Type>, TypedExpr, EcoString, EcoString>> {
+        self.definitions.iter().find(|def| {
+            if let Definition::Function(f) = def {
+                f.full_location().contains(byte_index)
+            } else {
+                def.location().contains(byte_index)
+            }
+        })
+    }
 }
 
 /// The `@target(erlang)` and `@target(javascript)` attributes can be used to
