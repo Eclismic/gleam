@@ -49,15 +49,15 @@ fn inline_variable_refactor(src: &str, position_start: Position, position_end: P
                     }
                 }
               }
-            
+
             pub fn reverse(xs: List(a)) -> List(a) {
                 do_reverse(xs)
             }
-            
+
             fn do_reverse(list) {
                 do_reverse_acc(list, [])
             }
-            
+
             fn do_reverse_acc(remaining, accumulator) {
                 case remaining {
                     [] -> accumulator
@@ -101,6 +101,7 @@ fn inline_variable_refactor(src: &str, position_start: Position, position_end: P
             .into_iter()
             .find(|action| action.title == "Inline Variable Refactor")
     });
+
     if let Some(action) = response {
         apply_code_action(src, &url, &action)
     } else {
@@ -132,20 +133,272 @@ fn apply_code_edit(
             panic!("Unknown url {}", change_url)
         }
         for edit in change {
-            let start =
-                line_numbers.byte_index(edit.range.start.line, edit.range.start.character) - offset;
-            let end =
-                line_numbers.byte_index(edit.range.end.line, edit.range.end.character) - offset;
-            let range = (start as usize)..(end as usize);
-            offset += end - start;
+            let start = line_numbers.byte_index(edit.range.start.line, edit.range.start.character);
+            let end = line_numbers.byte_index(edit.range.end.line, edit.range.end.character);
+            let range = adjust_code_for_offset(start, end, offset);
+
+            offset += edit.new_text.len() as i32 - (end - start) as i32;
             result.replace_range(range, &edit.new_text);
         }
     }
     result
 }
 
+fn adjust_code_for_offset(start: u32, end: u32, offset: i32) -> std::ops::Range<usize> {
+    let adjusted_start = if offset.is_negative() {
+        start.checked_sub(offset.abs() as u32).unwrap_or(0) as usize
+    } else {
+        start as usize + offset as usize
+    };
+
+    let adjusted_end = if offset.is_positive() {
+        end.checked_add(offset as u32).unwrap_or(std::u32::MAX) as usize
+    } else {
+        end as usize - offset.abs() as usize
+    };
+
+    adjusted_start..adjusted_end
+}
+
 #[test]
-fn test_inlining_func_arg() {
+fn test_inline_local_var_into_multiple_call_let() {
+    assert_code_action!(
+        r#"
+import list
+
+fn main() {
+  let x = [1,2,3]
+  let y = list.reverse(x)
+  let z = list.reverse(x)
+  let u = list.reverse(x)
+  let v = list.reverse(x)
+}
+    "#,
+        Position::new(4, 6),
+        Position::new(4, 7)
+    );
+}
+
+#[test]
+fn test_inline_local_var_into_pipeline_let() {
+    assert_code_action!(
+        r#"
+import list
+
+fn main() {
+  let x = [1,2,3]
+  let result =
+  x
+  |> list.reverse()
+  |> list.map(fn(x) { x * 2})
+}
+    "#,
+        Position::new(4, 6),
+        Position::new(4, 7)
+    );
+}
+
+#[test]
+fn test_inline_local_var_into_bin_op_let() {
+    assert_code_action!(
+        r#"
+import list
+
+fn main() {
+  let x = 1
+  let y = x + 1
+}
+    "#,
+        Position::new(4, 6),
+        Position::new(4, 7)
+    );
+}
+
+#[test]
+fn test_inline_local_var_into_tuple_let() {
+    assert_code_action!(
+        r#"
+import list
+
+fn main() {
+  let x = #(1, 2, 3)
+  let res = #(x, #(4, 5, 6))
+}
+    "#,
+        Position::new(4, 6),
+        Position::new(4, 7)
+    );
+}
+
+#[test]
+fn test_inline_local_var_inside_block_let() {
+    assert_code_action!(
+        r#"
+import list
+
+fn main() {
+  {
+    let x = [1, 2, 3]
+    list.reverse(x)
+  }
+}
+    "#,
+        Position::new(5, 8),
+        Position::new(5, 9)
+    );
+}
+
+#[test]
+fn test_inline_local_var_inside_block_with_let_outside_block_let() {
+    assert_code_action!(
+        r#"
+import list
+
+fn main() {
+  let x = [1, 2, 3]
+  { list.reverse(x) }
+}
+    "#,
+        Position::new(4, 6),
+        Position::new(4, 7)
+    );
+}
+
+#[test]
+fn test_inline_local_var_into_list_let() {
+    assert_code_action!(
+        r#"
+import list
+
+fn main() {
+  let x = 2
+  let y = [1, x, 3]
+}
+    "#,
+        Position::new(4, 6),
+        Position::new(4, 7)
+    );
+}
+
+#[test]
+fn test_inline_local_var_into_fn_body_let() {
+    assert_code_action!(
+        r#"
+import list
+
+fn main() {
+  let y = 2
+  let func = fn(x) { x + y }
+  list.map([1, 2, 3], func)
+}
+    "#,
+        Position::new(4, 6),
+        Position::new(4, 7)
+    );
+}
+
+//Different let values
+#[test]
+fn test_inline_local_var_with_assign_value_bin_op_let() {
+    assert_code_action!(
+        r#"
+import list
+
+fn main() {
+  let x = 1 + 2
+  let y = x + 3
+}
+    "#,
+        Position::new(4, 6),
+        Position::new(4, 7)
+    );
+}
+
+#[test]
+fn test_inline_local_var_with_assign_val_tuple_let() {
+    assert_code_action!(
+        r#"
+import list
+
+fn main() {
+  let y = #(1, 2, 3)
+  let z = #(y, #(3, 4, 5))
+}
+        "#,
+        Position::new(4, 6),
+        Position::new(4, 7)
+    );
+}
+
+#[test]
+fn test_inline_local_var_with_assign_value_fn_call_let() {
+    assert_code_action!(
+        r#"
+import list
+
+fn main() {
+  let q = list.reverse([1, 2, 3])
+  let z = list.reverse(q)
+}
+    "#,
+        Position::new(4, 6),
+        Position::new(4, 7)
+    );
+}
+
+#[test]
+fn test_inline_local_var_with_assign_value_var_op_let() {
+    assert_code_action!(
+        r#"
+import list
+
+fn main() {
+  let u = 1 + 2
+  let y = u
+  let z = y + 4
+}
+        "#,
+        Position::new(5, 6),
+        Position::new(5, 7)
+    );
+}
+
+#[test]
+fn test_inline_local_var_into_expression_let() {
+    assert_code_action!(
+        r#"
+import list
+
+fn main() {
+  let x = [1, 2, 3]
+  list.reverse(x)
+}
+    "#,
+        Position::new(4, 6),
+        Position::new(4, 7)
+    );
+}
+
+// Inline Usage
+#[test]
+fn test_inline_local_var_no_delete_let_usage() {
+    assert_code_action!(
+        r#"
+import list
+
+fn main() {
+  let x = [1, 2, 3]
+  list.reverse(x)
+  list.reverse(x)
+}
+    "#,
+        Position::new(5, 15),
+        Position::new(5, 16)
+    );
+}
+
+#[test]
+fn test_inline_local_var_func_arg_usage() {
     assert_code_action!(
         r#"
 import list
@@ -161,44 +414,7 @@ fn main() {
 }
 
 #[test]
-fn test_inlining_with_multiple_candidates() {
-    assert_code_action!(
-        r#"
-import list
-
-fn main() {
-  let x = [1,2,3]
-  let result1 = list.reverse(x)
-  let y = [4, 5, 6]
-  let result2 = list.reverse(y)
-}
-        "#,
-        Position::new(7, 29),
-        Position::new(7, 30)
-    );
-}
-
-#[test]
-fn test_inlining_pipeline() {
-    assert_code_action!(
-        r#"
-import list
-
-fn main() {
-  let x = [1,2,3]
-  let result =
-  x
-  |> list.reverse()
-  |> list.map(fn(x) { x * 2})
-}
-        "#,
-        Position::new(6, 2),
-        Position::new(6, 3)
-    );
-}
-
-#[test]
-fn test_inlining_bin_op() {
+fn test_inline_local_var_bin_op_usage() {
     assert_code_action!(
         r#"
 import list
@@ -207,45 +423,14 @@ fn main() {
   let x = 1
   let y = x + 1
 }
-        "#,
+    "#,
         Position::new(5, 10),
         Position::new(5, 11)
     );
 }
 
 #[test]
-fn test_inlining_tuple() {
-    assert_code_action!(
-        r#"
-import list
-
-fn main() {
-  let x = [1, 2, 3]
-  #(1, x, 3)
-}
-        "#,
-        Position::new(5, 7),
-        Position::new(5, 8)
-    );
-}
-#[test]
-fn test_inlining_into_expression() {
-    assert_code_action!(
-        r#"
-import list
-
-fn main() {
-  let x = [1, 2, 3]
-  list.reverse(x)
-}
-        "#,
-        Position::new(5, 15),
-        Position::new(5, 16)
-    );
-}
-
-#[test]
-fn test_inlining_block_expression() {
+fn test_inline_local_var_block_usage() {
     assert_code_action!(
         r#"
 import list
@@ -256,14 +441,14 @@ fn main() {
     list.reverse(x)
   }
 }
-        "#,
+    "#,
         Position::new(6, 17),
         Position::new(6, 18)
     );
 }
 
 #[test]
-fn test_inlining_block_expression_with_var_outside_block() {
+fn test_inline_local_var_block_outside_usage() {
     assert_code_action!(
         r#"
 import list
@@ -272,14 +457,14 @@ fn main() {
   let x = [1, 2, 3]
   { list.reverse(x) }
 }
-        "#,
+    "#,
         Position::new(5, 17),
         Position::new(5, 18)
     );
 }
 
 #[test]
-fn test_inlining_list() {
+fn test_inline_local_var_list_usage() {
     assert_code_action!(
         r#"
 import list
@@ -295,14 +480,14 @@ fn main() {
 }
 
 #[test]
-fn test_inlining_variable_in_fn_body() {
+fn test_inline_local_var_fn_body_usage() {
     assert_code_action!(
         r#"
 import list
 
 fn main() {
   let y = 2
-  let func = fn(x) { x + y } 
+  let func = fn(x) { x + y }
   list.map([1, 2, 3], func)
 }
         "#,
@@ -312,66 +497,20 @@ fn main() {
 }
 
 #[test]
-fn test_inlining_tuple_as_var() {
+#[should_panic]
+fn test_inline_local_var_do_not_inline_unused_var() {
+    cov_mark::check!(test_inline_local_var_do_not_inline_unused_var);
     assert_code_action!(
         r#"
-import list
+    import list
 
-fn main() {
-  let y = #(1, 2, 3)
-  let z = #(y, #(3, 4, 5))
-}
-        "#,
-        Position::new(5, 12),
-        Position::new(5, 13)
-    );
-}
-
-#[test]
-fn test_inlining_bin_op_as_var() {
-    assert_code_action!(
-        r#"
-import list
-
-fn main() {
-  let x = 1 + 2
-  let y = x + 3
-}
-        "#,
-        Position::new(5, 10),
-        Position::new(5, 11)
-    );
-}
-
-#[test]
-fn test_inlining_fn_call() {
-    assert_code_action!(
-        r#"
-import list
-
-fn main() {
-  let q = list.reverse([1, 2, 3])
-  let z = list.reverse(q)
-}
-        "#,
-        Position::new(5, 23),
-        Position::new(5, 24)
-    );
-}
-
-#[test]
-fn test_inlining_other_variable() {
-    assert_code_action!(
-        r#"
-import list
-
-fn main() {
-  let u = 1 + 2
-  let y = u + 3
-  let z = y + 4
-}
-        "#,
-        Position::new(6, 10),
-        Position::new(6, 11)
+    fn main() {
+      let x = 1
+      let y = 2
+      [1, y, 3]
+    }
+            "#,
+        Position::new(4, 6),
+        Position::new(4, 7)
     );
 }
