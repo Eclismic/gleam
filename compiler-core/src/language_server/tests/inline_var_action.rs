@@ -8,12 +8,25 @@ use super::*;
 
 macro_rules! assert_code_action {
     ($src:expr, $position_start:expr, $position_end:expr) => {
-        let result = inline_variable_refactor($src, $position_start, $position_end);
+        assert_code_action!($src, $position_start, $position_end, true);
+    };
+    ($src:expr, $position_start:expr, $position_end:expr, $codeaction_is_to_expected:expr) => {
+        let result = inline_variable_refactor(
+            $src,
+            $position_start,
+            $position_end,
+            $codeaction_is_to_expected,
+        );
         insta::assert_snapshot!(insta::internals::AutoName, result, $src);
     };
 }
 
-fn inline_variable_refactor(src: &str, position_start: Position, position_end: Position) -> String {
+fn inline_variable_refactor(
+    src: &str,
+    position_start: Position,
+    position_end: Position,
+    codeaction_is_to_expected: bool,
+) -> String {
     let io = LanguageServerTestIO::new();
     let mut engine = setup_engine(&io);
 
@@ -105,7 +118,11 @@ fn inline_variable_refactor(src: &str, position_start: Position, position_end: P
     if let Some(action) = response {
         apply_code_action(src, &url, &action)
     } else {
-        panic!("No code action produced by the engine")
+        if codeaction_is_to_expected {
+            panic!("No code action produced by the engine")
+        } else {
+            "No codeaction produced, check if mark is hit...".into()
+        }
     }
 }
 
@@ -497,9 +514,8 @@ fn main() {
 }
 
 #[test]
-#[should_panic]
 fn test_inline_local_var_do_not_inline_unused_var() {
-    cov_mark::check!(test_inline_local_var_do_not_inline_unused_var);
+    cov_mark::check!(do_not_inline);
     assert_code_action!(
         r#"
     import list
@@ -511,6 +527,7 @@ fn test_inline_local_var_do_not_inline_unused_var() {
     }
             "#,
         Position::new(4, 6),
-        Position::new(4, 7)
+        Position::new(4, 7),
+        false
     );
 }

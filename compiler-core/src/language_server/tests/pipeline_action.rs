@@ -8,12 +8,25 @@ use super::*;
 
 macro_rules! assert_code_action {
     ($src:expr, $position_start:expr, $position_end:expr) => {
-        let result = convert_to_pipeline($src, $position_start, $position_end);
+        assert_code_action!($src, $position_start, $position_end, true);
+    };
+    ($src:expr, $position_start:expr, $position_end:expr, $codeaction_is_to_expected:expr) => {
+        let result = convert_to_pipeline(
+            $src,
+            $position_start,
+            $position_end,
+            $codeaction_is_to_expected,
+        );
         insta::assert_snapshot!(insta::internals::AutoName, result, $src);
     };
 }
 
-fn convert_to_pipeline(src: &str, position_start: Position, position_end: Position) -> String {
+fn convert_to_pipeline(
+    src: &str,
+    position_start: Position,
+    position_end: Position,
+    codeaction_is_to_expected: bool,
+) -> String {
     let io = LanguageServerTestIO::new();
     let mut engine = setup_engine(&io);
 
@@ -49,22 +62,22 @@ fn convert_to_pipeline(src: &str, position_start: Position, position_end: Positi
                     }
                 }
               }
-            
+
             pub fn reverse(xs: List(a)) -> List(a) {
                 do_reverse(xs)
             }
-            
+
             fn do_reverse(list) {
                 do_reverse_acc(list, [])
             }
-            
+
             fn do_reverse_acc(remaining, accumulator) {
                 case remaining {
                     [] -> accumulator
                     [item, ..rest] -> do_reverse_acc(rest, [item, ..accumulator])
                 }
             }
-            
+
             pub fn map2(
                 list1: List(a),
                 list2: List(b),
@@ -72,7 +85,7 @@ fn convert_to_pipeline(src: &str, position_start: Position, position_end: Positi
               ) -> List(c) {
                 do_map2(list1, list2, fun, [])
               }
-              
+
               fn do_map2(
                 list1: List(a),
                 list2: List(b),
@@ -91,7 +104,7 @@ fn convert_to_pipeline(src: &str, position_start: Position, position_end: Positi
                   _, _ -> reverse(acc)
                 }
               }
-              
+
               pub fn zip(list: List(a), with other: List(b)) -> List(#(a, b)) {
                 do_zip(list, other, [])
               }
@@ -134,7 +147,11 @@ fn convert_to_pipeline(src: &str, position_start: Position, position_end: Positi
     if let Some(action) = response {
         apply_code_action(src, &url, &action)
     } else {
-        panic!("No code action produced by the engine")
+        if codeaction_is_to_expected {
+            panic!("No code action produced by the engine")
+        } else {
+            "No codeaction produced, check if mark is hit...".into()
+        }
     }
 }
 
@@ -238,5 +255,39 @@ fn main() {
 "#,
         Position::new(4, 2),
         Position::new(4, 47)
+    );
+}
+
+#[test]
+fn test_pipeline_code_action_no_pipeline_when_no_stringification_for_expression() {
+    cov_mark::check!(no_stringification_for_expression);
+    assert_code_action!(
+        r#"
+import list
+
+fn main() {
+  list.take_while(list.reverse(list.map([1,2,3], fn(x){ x + 1 })), fn(x){x<3})
+}
+"#,
+        Position::new(4, 2),
+        Position::new(4, 47),
+        false
+    );
+}
+
+#[test]
+fn test_pipeline_code_action_no_pipeline_when_call_chain_not_bigger_than_one() {
+    cov_mark::check!(call_chain_not_big_enough);
+    assert_code_action!(
+        r#"
+import list
+
+fn main() {
+  list.reverse([1, 2, 3, 4, 5])
+}
+"#,
+        Position::new(4, 2),
+        Position::new(4, 31),
+        false
     );
 }
