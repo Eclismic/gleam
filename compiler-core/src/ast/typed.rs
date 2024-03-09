@@ -206,7 +206,6 @@ impl TypedExpr {
                 None
             }
 
-            // Here you should be able to do a quick exit...
             // In case [1, 2, 3] and byte search 2
             // then you should get the list back, and not an element from the list.
             Self::Tuple {
@@ -235,8 +234,8 @@ impl TypedExpr {
                 .or_else(|| self.self_if_contains_location(byte_index)),
 
             Self::Fn { body, args, .. } => {
-                if args.first().is_some_and(|a| a.location.start <= byte_index)
-                    && args.last().is_some_and(|a| a.location.end > byte_index)
+                if args.first().is_some_and(|a| byte_index >= a.location.start)
+                    && args.last().is_some_and(|a| byte_index < a.location.end)
                 {
                     if let Some(located) = args.iter().find_map(|arg| arg.find_node(byte_index)) {
                         return Some(located);
