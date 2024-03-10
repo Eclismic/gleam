@@ -12,19 +12,29 @@ pub fn convert_to_pipeline(
     let byte_index = line_numbers.byte_index(params.range.start.line, params.range.start.character);
 
     let (call_expression, location) = match module.find_node(byte_index) {
-        Some(Located::Expression(expr)) => (expr, expr.location().start),
+        Some(Located::Expression(expr)) => {
+            if let TypedExpr::Call { .. } = expr {
+                (expr, expr.location().start)
+            } else {
+                return;
+            }
+        }
         _ => return,
     };
 
     let mut call_chain: Vec<&TypedExpr> = Vec::new();
-    detect_call_chain_conversion_to_pipeline(call_expression, &mut call_chain);
+    detect_call_chain_conversion_to_pipeline(&call_expression, &mut call_chain);
 
-    if call_chain.is_empty() || call_chain.len() < 2 {
-        cov_mark::hit!(call_chain_not_big_enough);
+    if call_chain.is_empty() {
+        cov_mark::hit!(chain_is_empty);
         return;
     }
 
-    let pipeline_parts = convert_call_chain_to_pipeline(call_chain).unwrap();
+    let pipeline_parts = match convert_call_chain_to_pipeline(call_chain) {
+        Some(parts) => parts,
+        //input for pipeline cannot be stringified
+        None => return,
+    };
 
     //location is where the original call expression started
     //this is also the place where we want to insert the piped conversion
@@ -43,14 +53,24 @@ fn detect_call_chain_conversion_to_pipeline<'a>(
     call_expression: &'a TypedExpr,
     call_chain: &mut Vec<&'a TypedExpr>,
 ) {
-    call_chain.push(call_expression);
-
     if let TypedExpr::Call { args, .. } = call_expression {
         let arg = match args.first() {
-            Some(arg) => arg,
+            Some(arg) => {
+                //Maybe need to change this to check if call is part of pipeline expression
+                //Instead of checking if there is an invisible callarg named _pipe
+                if let TypedExpr::Var { name, .. } = &arg.value {
+                    if name == "_pipe" {
+                        cov_mark::hit!(empty_call_chain_as_part_of_pipeline);
+                        return;
+                    }
+                }
+                call_chain.push(call_expression);
+                arg
+            }
             None => return,
         };
 
+        //recurse on it's first argument
         match &arg.value {
             TypedExpr::Call { .. } => {
                 detect_call_chain_conversion_to_pipeline(&arg.value, call_chain)
@@ -96,6 +116,7 @@ fn convert_call_chain_to_pipeline(mut call_chain: Vec<&TypedExpr>) -> Option<Pip
 
     let first_chain = call_chain.first().expect("There is a first element");
 
+    //Returns None in case the input cannot be stringified
     let input = match first_chain {
         TypedExpr::Call { args, .. } => {
             if let Some(arg) = args.first() {

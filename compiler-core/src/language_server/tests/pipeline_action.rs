@@ -108,6 +108,10 @@ fn convert_to_pipeline(
               pub fn zip(list: List(a), with other: List(b)) -> List(#(a, b)) {
                 do_zip(list, other, [])
               }
+
+              pub fn do_stuff(){
+
+              }
         "#,
     );
 
@@ -150,7 +154,7 @@ fn convert_to_pipeline(
         if codeaction_is_to_expected {
             panic!("No code action produced by the engine")
         } else {
-            "No codeaction produced, check if mark is hit...".into()
+            "No codeaction produced...".into()
         }
     }
 }
@@ -192,19 +196,20 @@ fn apply_code_edit(
 }
 
 #[test]
-fn test_simple() {
+fn test_pipeline_simple() {
     assert_code_action!(
         r#"
 import list
 
 fn main() {
-  let result = list.reverse(list.zip([1,2,3], [4,5,6]))
+  list.reverse([1, 2, 3, 4, 5])
 }
 "#,
-        Position::new(4, 15),
-        Position::new(4, 61)
+        Position::new(4, 2),
+        Position::new(4, 31)
     );
 }
+
 #[test]
 fn test_converting_assign_to_pipeline() {
     assert_code_action!(
@@ -276,18 +281,69 @@ fn main() {
 }
 
 #[test]
-fn test_pipeline_code_action_no_pipeline_when_call_chain_not_bigger_than_one() {
-    cov_mark::check!(call_chain_not_big_enough);
+fn test_pipeline_code_action_no_pipeline_input_cannot_be_stringified() {
+    assert_code_action!(
+        r#"
+import list
+
+pub fn main() {
+  list.reverse([1, 2, 3, 4, 5]
+               |> list.reverse())
+}
+"#,
+        Position::new(4, 2),
+        Position::new(4, 3),
+        false
+    );
+}
+
+#[test]
+fn test_pipeline_code_action_apply_pipeline_locally() {
     assert_code_action!(
         r#"
 import list
 
 fn main() {
-  list.reverse([1, 2, 3, 4, 5])
+  list.reverse(list.reverse([1, 2, 3, 4, 5]))
+}
+
+"#,
+        Position::new(4, 15),
+        Position::new(4, 19)
+    );
+}
+
+#[test]
+fn test_pipeline_code_action_no_pipeline_when_no_call_chain() {
+    cov_mark::check!(chain_is_empty);
+    assert_code_action!(
+        r#"
+import list
+
+pub fn main() {
+  list.do_stuff()
 }
 "#,
         Position::new(4, 2),
-        Position::new(4, 31),
+        Position::new(4, 11),
+        false
+    );
+}
+
+#[test]
+fn test_pipeline_code_action_no_pipeline_for_empty_call_chain_as_part_of_pipeline() {
+    cov_mark::check!(empty_call_chain_as_part_of_pipeline);
+    assert_code_action!(
+        r#"
+import list
+
+pub fn main() {
+  list.reverse([1, 2, 3, 4, 5]
+               |> list.reverse())
+}
+"#,
+        Position::new(5, 18),
+        Position::new(5, 19),
         false
     );
 }
