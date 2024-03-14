@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use crate::ast::SrcSpan;
 
 use super::*;
@@ -8,6 +10,8 @@ pub fn convert_to_pipeline(
     actions: &mut Vec<CodeAction>,
     resolve: bool,
 ) {
+    let before = Instant::now();
+
     let uri = &params.text_document.uri;
     let line_numbers = LineNumbers::new(&module.code);
     let byte_index = line_numbers.byte_index(params.range.start.line, params.range.start.character);
@@ -31,7 +35,7 @@ pub fn convert_to_pipeline(
         return;
     }
 
-    if resolve {
+    if true {
         let pipeline_parts = match convert_call_chain_to_pipeline(call_chain) {
             Some(parts) => parts,
             //input for pipeline cannot be stringified
@@ -56,6 +60,7 @@ pub fn convert_to_pipeline(
             .preferred(true)
             .push_to(actions);
     }
+    dbg!(before.elapsed());
 }
 
 fn detect_call_chain_conversion_to_pipeline<'a>(

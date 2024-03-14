@@ -145,7 +145,6 @@ where
 
             name => panic!("Unsupported LSP request {}", name),
         };
-
         self.publish_feedback(feedback);
 
         let response = lsp_server::Response {

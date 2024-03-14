@@ -254,7 +254,6 @@ where
             code_action_unused_imports(module, &params, &mut actions);
             inline_var_handler::inline_local_variable(module, &params, &mut actions);
             pipeline_handler::convert_to_pipeline(module, &params, &mut actions, false);
-            defer_calc(module, &params, &mut actions, false);
 
             Ok(if actions.is_empty() {
                 None
@@ -274,7 +273,6 @@ where
 
             let mut actions = vec![];
             match params.id.as_str() {
-                "defer_calc" => defer_calc(module, codeaction_params, &mut actions, true),
                 "pipeline" => pipeline_handler::convert_to_pipeline(
                     module,
                     codeaction_params,
@@ -645,45 +643,6 @@ fn range_includes(outer: &lsp_types::Range, inner: &lsp_types::Range) -> bool {
     (outer.start >= inner.start && outer.start <= inner.end)
         || (outer.end >= inner.start && outer.end <= inner.end)
         || (inner.start >= outer.start && inner.end <= outer.end)
-}
-
-fn defer_calc(
-    module: &Module,
-    params: &lsp::CodeActionParams,
-    actions: &mut Vec<CodeAction>,
-    resolve: bool,
-) {
-    let uri = &params.text_document.uri;
-
-    let mut edits = Vec::with_capacity(1);
-    edits.push(lsp_types::TextEdit {
-        range: Range {
-            start: Position {
-                line: 19,
-                character: 0,
-            },
-            end: Position {
-                line: 19,
-                character: 20,
-            },
-        },
-        new_text: "Dit is een defer geresolved".into(),
-    });
-
-    if resolve {
-        CodeActionBuilder::new("Defer Edit Calculation")
-            .kind(lsp_types::CodeActionKind::QUICKFIX)
-            .changes(uri.clone(), edits)
-            .preferred(true)
-            .preferred(true)
-            .push_to(actions);
-    } else {
-        CodeActionBuilder::new("Defer Edit Calculation")
-            .kind(lsp_types::CodeActionKind::QUICKFIX)
-            .preferred(true)
-            .data("defer_calc".into(), params.clone())
-            .push_to(actions);
-    }
 }
 
 fn code_action_unused_imports(
