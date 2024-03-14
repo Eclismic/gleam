@@ -14,7 +14,7 @@ use crate::{
 use debug_ignore::DebugIgnore;
 use lsp::{
     notification::{DidChangeWatchedFiles, DidOpenTextDocument},
-    request::GotoDefinition,
+    request::{CodeActionResolveRequest, GotoDefinition},
     HoverProviderCapability, Position, Range, TextEdit, Url,
 };
 use lsp_types::{
@@ -28,7 +28,7 @@ use std::collections::HashMap;
 
 use camino::Utf8PathBuf;
 
-use super::progress::ConnectionProgressReporter;
+use super::{code_action::CodeActionData, progress::ConnectionProgressReporter};
 
 /// This class is responsible for handling the language server protocol and
 /// delegating the work to the engine.
@@ -136,6 +136,11 @@ where
             "textDocument/codeAction" => {
                 let params = cast_request::<CodeActionRequest>(request);
                 self.code_action(params)
+            }
+
+            "codeAction/resolve" => {
+                let params = cast_request::<CodeActionResolveRequest>(request);
+                self.code_action_resolve(params)
             }
 
             name => panic!("Unsupported LSP request {}", name),
@@ -444,6 +449,19 @@ where
         self.router.delete_engine_for_path(&path);
         self.notified_with_engine(path, LanguageServerEngine::compile_please)
     }
+
+    fn code_action_resolve(&mut self, params: lsp::CodeAction) -> (Json, Feedback) {
+        let params = match serde_json::from_value::<CodeActionData>(params.data.unwrap()) {
+            Ok(params) => params,
+            Err(err) => {
+                // Handle the error appropriately. Here, I'm just printing it.
+                eprintln!("Error deserializing params: {:?}", err);
+                return (Json::Null, Feedback::default());
+            }
+        };
+        let path = path(&params.code_action_params.text_document.uri);
+        self.respond_with_engine(path, |engine| engine.resolve_action(params))
+    }
 }
 
 fn initialisation_handshake(connection: &lsp_server::Connection) -> InitializeParams {
@@ -480,7 +498,21 @@ fn initialisation_handshake(connection: &lsp_server::Connection) -> InitializePa
         document_highlight_provider: None,
         document_symbol_provider: None,
         workspace_symbol_provider: None,
-        code_action_provider: Some(lsp::CodeActionProviderCapability::Simple(true)),
+        //code_action_provider: Some(lsp::CodeActionProviderCapability::Simple(true)),
+        code_action_provider: Some(lsp::CodeActionProviderCapability::Options(
+            lsp::CodeActionOptions {
+                code_action_kinds: Some(vec![
+                    lsp::CodeActionKind::EMPTY,
+                    lsp::CodeActionKind::QUICKFIX,
+                    lsp::CodeActionKind::REFACTOR,
+                    lsp::CodeActionKind::REFACTOR_EXTRACT,
+                    lsp::CodeActionKind::REFACTOR_INLINE,
+                    lsp::CodeActionKind::REFACTOR_REWRITE,
+                ]),
+                work_done_progress_options: Default::default(),
+                resolve_provider: Some(true),
+            },
+        )),
         code_lens_provider: None,
         document_formatting_provider: Some(lsp::OneOf::Left(true)),
         document_range_formatting_provider: None,

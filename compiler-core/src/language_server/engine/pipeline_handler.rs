@@ -6,6 +6,7 @@ pub fn convert_to_pipeline(
     module: &Module,
     params: &lsp::CodeActionParams,
     actions: &mut Vec<CodeAction>,
+    resolve: bool,
 ) {
     let uri = &params.text_document.uri;
     let line_numbers = LineNumbers::new(&module.code);
@@ -30,20 +31,28 @@ pub fn convert_to_pipeline(
         return;
     }
 
-    let pipeline_parts = match convert_call_chain_to_pipeline(call_chain) {
-        Some(parts) => parts,
-        //input for pipeline cannot be stringified
-        None => return,
-    };
+    if resolve {
+        let pipeline_parts = match convert_call_chain_to_pipeline(call_chain) {
+            Some(parts) => parts,
+            //input for pipeline cannot be stringified
+            None => return,
+        };
 
-    //location is where the original call expression started
-    //this is also the place where we want to insert the piped conversion
-    let indent = line_numbers.line_and_column_number(location).column - 1;
+        //location is where the original call expression started
+        //this is also the place where we want to insert the piped conversion
+        let indent = line_numbers.line_and_column_number(location).column - 1;
 
-    if let Some(edit) = create_edit(pipeline_parts, line_numbers, indent) {
+        if let Some(edit) = create_edit(pipeline_parts, line_numbers, indent) {
+            CodeActionBuilder::new("Apply Pipeline Rewrite")
+                .kind(lsp_types::CodeActionKind::REFACTOR_REWRITE)
+                .changes(uri.clone(), vec![edit])
+                .preferred(true)
+                .push_to(actions);
+        }
+    } else {
         CodeActionBuilder::new("Apply Pipeline Rewrite")
             .kind(lsp_types::CodeActionKind::REFACTOR_REWRITE)
-            .changes(uri.clone(), vec![edit])
+            .data("pipeline".into(), params.clone())
             .preferred(true)
             .push_to(actions);
     }
