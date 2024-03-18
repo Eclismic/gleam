@@ -1,6 +1,6 @@
 use crate::{
     ast::{
-        Arg, Definition, Function, Import, ModuleConstant, SrcSpan, Statement, TypedDefinition,
+        Arg, Definition, Function, Import, ModuleConstant, Statement, TypedDefinition,
         TypedExpr, TypedPattern,
     },
     build::{Located, Module},
@@ -16,14 +16,13 @@ use crate::{
 };
 use camino::Utf8PathBuf;
 use ecow::EcoString;
-use lsp::{CodeAction, Position, Range, WorkspaceEdit};
+use lsp::CodeAction;
 use lsp_types::{self as lsp, Hover, HoverContents, MarkedString, Url};
 use std::sync::Arc;
 use strum::IntoEnumIterator;
 
 use super::{
-    code_action::{CodeActionBuilder, CodeActionData},
-    src_span_to_lsp_range, DownloadDependencies, MakeLocker,
+    code_action::{CodeActionBuilder, CodeActionData}, determine_resolve_strategy, src_span_to_lsp_range, DownloadDependencies, MakeLocker, ResolveStrategy
 };
 
 mod inline_var_handler;
@@ -247,13 +246,16 @@ where
     pub fn action(&mut self, params: lsp::CodeActionParams) -> Response<Option<Vec<CodeAction>>> {
         self.respond(|this| {
             let mut actions = vec![];
+
+            let resolve_strategy = determine_resolve_strategy(&params);
+
             let Some(module) = this.module_for_uri(&params.text_document.uri) else {
                 return Ok(None);
             };
 
             code_action_unused_imports(module, &params, &mut actions);
             inline_var_handler::inline_local_variable(module, &params, &mut actions);
-            pipeline_handler::convert_to_pipeline(module, &params, &mut actions, false);
+            pipeline_handler::convert_to_pipeline(module, &params, &mut actions, resolve_strategy);
 
             Ok(if actions.is_empty() {
                 None
@@ -272,15 +274,16 @@ where
             let codeaction_params = &params.code_action_params;
 
             let mut actions = vec![];
-            match params.id.as_str() {
-                "pipeline" => pipeline_handler::convert_to_pipeline(
-                    module,
-                    codeaction_params,
-                    &mut actions,
-                    true,
-                ),
-                _ => todo!(),
-            };
+            match params.id{
+                super::code_action::ActionId::Pipeline => pipeline_handler::convert_to_pipeline(
+                            module,
+                            codeaction_params,
+                            &mut actions,
+                            ResolveStrategy::Eager,
+                        ),
+                _ => return Ok(None)
+            }
+        
             let action = actions.first().unwrap().to_owned();
 
             Ok(Some(action))

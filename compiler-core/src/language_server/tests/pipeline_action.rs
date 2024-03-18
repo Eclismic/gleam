@@ -1,7 +1,6 @@
 use crate::line_numbers::LineNumbers;
 use lsp_types::{
-    CodeActionContext, CodeActionParams, PartialResultParams, Position, Range,
-    TextDocumentIdentifier, Url, WorkDoneProgressParams, WorkspaceEdit,
+    CodeActionContext, CodeActionParams, CodeActionTriggerKind, PartialResultParams, Position, Range, TextDocumentIdentifier, Url, WorkDoneProgressParams, WorkspaceEdit
 };
 
 use super::*;
@@ -132,7 +131,7 @@ fn convert_to_pipeline(
         context: CodeActionContext {
             diagnostics: vec![],
             only: None,
-            trigger_kind: None,
+            trigger_kind: Some(CodeActionTriggerKind::INVOKED),
         },
         range: Range::new(position_start, position_end),
         work_done_progress_params: WorkDoneProgressParams {

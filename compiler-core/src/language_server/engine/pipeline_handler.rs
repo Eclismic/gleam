@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use crate::ast::SrcSpan;
+use crate::{ast::SrcSpan, language_server::code_action::ActionId};
 
 use super::*;
 
@@ -8,7 +8,7 @@ pub fn convert_to_pipeline(
     module: &Module,
     params: &lsp::CodeActionParams,
     actions: &mut Vec<CodeAction>,
-    resolve: bool,
+    strategy: ResolveStrategy,
 ) {
     let before = Instant::now();
 
@@ -35,7 +35,7 @@ pub fn convert_to_pipeline(
         return;
     }
 
-    if true {
+    if strategy.is_eager() {
         let pipeline_parts = match convert_call_chain_to_pipeline(call_chain) {
             Some(parts) => parts,
             //input for pipeline cannot be stringified
@@ -56,7 +56,7 @@ pub fn convert_to_pipeline(
     } else {
         CodeActionBuilder::new("Apply Pipeline Rewrite")
             .kind(lsp_types::CodeActionKind::REFACTOR_REWRITE)
-            .data("pipeline".into(), params.clone())
+            .data(ActionId::Pipeline, params.clone())
             .preferred(true)
             .push_to(actions);
     }
