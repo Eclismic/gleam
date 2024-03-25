@@ -162,16 +162,16 @@ fn apply_code_edit(
 }
 
 fn adjust_code_for_offset(start: u32, end: u32, offset: i32) -> std::ops::Range<usize> {
-    let adjusted_start = if offset.is_negative() {
-        start.checked_sub(offset.abs() as u32).unwrap_or(0) as usize
+    let adjusted_start = if offset >= 0 {
+        start.saturating_add(offset as u32) as usize
     } else {
-        start as usize + offset as usize
+        start.saturating_sub(offset.abs() as u32) as usize
     };
 
-    let adjusted_end = if offset.is_positive() {
-        end.checked_add(offset as u32).unwrap_or(std::u32::MAX) as usize
+    let adjusted_end = if offset >= 0 {
+        end.saturating_add(offset as u32) as usize
     } else {
-        end as usize - offset.abs() as usize
+        end.saturating_sub(offset.abs() as u32) as usize
     };
 
     adjusted_start..adjusted_end
