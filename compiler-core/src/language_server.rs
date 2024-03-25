@@ -16,7 +16,7 @@ use crate::{
     ast::SrcSpan, build::Target, line_numbers::LineNumbers, manifest::Manifest,
     paths::ProjectPaths, Result,
 };
-use lsp_types::{Position, Range};
+use lsp_types::{CodeActionParams, CodeActionTriggerKind, Position, Range};
 use std::any::Any;
 
 #[derive(Debug)]
@@ -42,4 +42,32 @@ pub fn src_span_to_lsp_range(location: SrcSpan, line_numbers: &LineNumbers) -> R
         Position::new(start.line - 1, start.column - 1),
         Position::new(end.line - 1, end.column - 1),
     )
+}
+
+pub fn determine_resolve_strategy(params: &CodeActionParams) -> ResolveStrategy {
+    if let Some(trigger_kind) = params.context.trigger_kind{
+        if let CodeActionTriggerKind::INVOKED = trigger_kind {
+            ResolveStrategy::Eager
+        } else {
+            ResolveStrategy::Lazy
+        }
+    } else{
+       ResolveStrategy::Lazy
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResolveStrategy{
+    Eager,
+    Lazy
+}
+
+impl ResolveStrategy {
+    pub fn is_eager(&self) -> bool {
+        matches!(self, ResolveStrategy::Eager)
+    }
+
+    pub fn is_lazy(&self) -> bool {
+        matches!(self, ResolveStrategy::Lazy)
+    }
 }

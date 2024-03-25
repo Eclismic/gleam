@@ -13,21 +13,16 @@ use std::{
 use hexpm::version::Version;
 
 use camino::{Utf8Path, Utf8PathBuf};
+use lsp_types::{Url, WorkspaceEdit};
 
 use crate::{
-    config::PackageConfig,
-    io::{
+    config::PackageConfig, io::{
         memory::InMemoryFileSystem, CommandExecutor, FileSystemReader, FileSystemWriter, ReadDir,
         WrappedReader,
-    },
-    language_server::{
+    }, language_server::{
         engine::LanguageServerEngine, files::FileSystemProxy, progress::ProgressReporter,
         DownloadDependencies, LockGuard, Locker, MakeLocker,
-    },
-    manifest::{Base16Checksum, Manifest, ManifestPackage, ManifestPackageSource},
-    paths::ProjectPaths,
-    requirement::Requirement,
-    Result,
+    }, line_numbers::LineNumbers, manifest::{Base16Checksum, Manifest, ManifestPackage, ManifestPackageSource}, paths::ProjectPaths, requirement::Requirement, Result
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -326,4 +321,55 @@ fn setup_engine(
         io.paths.clone(),
     )
     .unwrap()
+}
+
+fn apply_code_action(src: &str, url: &Url, action: &lsp_types::CodeAction) -> String {
+    match &action.edit {
+        Some(WorkspaceEdit { changes, .. }) => match changes {
+            Some(changes) => apply_code_edit(src, url, changes),
+            None => panic!("No text edit found"),
+        },
+        _ => panic!("No workspace edit found"),
+    }
+}
+
+// This function replicates how the text editor applies TextEdit
+fn apply_code_edit(
+    src: &str,
+    url: &Url,
+    changes: &HashMap<Url, Vec<lsp_types::TextEdit>>,
+) -> String {
+    let mut result = src.to_string();
+    let line_numbers = LineNumbers::new(src);
+    let mut offset = 0;
+    for (change_url, change) in changes {
+        if url != change_url {
+            panic!("Unknown url {}", change_url)
+        }
+        for edit in change {
+            let start = line_numbers.byte_index(edit.range.start.line, edit.range.start.character);
+            let end = line_numbers.byte_index(edit.range.end.line, edit.range.end.character);
+            let range = adjust_code_for_offset(start, end, offset);
+
+            offset += edit.new_text.len() as i32 - (end - start) as i32;
+            result.replace_range(range, &edit.new_text);
+        }
+    }
+    result
+}
+
+fn adjust_code_for_offset(start: u32, end: u32, offset: i32) -> std::ops::Range<usize> {
+    let adjusted_start = if offset >= 0 {
+        start.saturating_add(offset as u32) as usize
+    } else {
+        start.saturating_sub(offset.abs() as u32) as usize
+    };
+
+    let adjusted_end = if offset >= 0 {
+        end.saturating_add(offset as u32) as usize
+    } else {
+        end.saturating_sub(offset.abs() as u32) as usize
+    };
+
+    adjusted_start..adjusted_end
 }

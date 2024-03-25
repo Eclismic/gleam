@@ -1,7 +1,5 @@
-use crate::line_numbers::LineNumbers;
 use lsp_types::{
-    CodeActionContext, CodeActionParams, PartialResultParams, Position, Range,
-    TextDocumentIdentifier, Url, WorkDoneProgressParams, WorkspaceEdit,
+    CodeActionContext, CodeActionParams, CodeActionTriggerKind, PartialResultParams, Position, Range, TextDocumentIdentifier, Url, WorkDoneProgressParams
 };
 
 use super::*;
@@ -132,7 +130,7 @@ fn convert_to_pipeline(
         context: CodeActionContext {
             diagnostics: vec![],
             only: None,
-            trigger_kind: None,
+            trigger_kind: Some(CodeActionTriggerKind::INVOKED),
         },
         range: Range::new(position_start, position_end),
         work_done_progress_params: WorkDoneProgressParams {
@@ -157,42 +155,6 @@ fn convert_to_pipeline(
             "No codeaction produced...".into()
         }
     }
-}
-
-fn apply_code_action(src: &str, url: &Url, action: &lsp_types::CodeAction) -> String {
-    match &action.edit {
-        Some(WorkspaceEdit { changes, .. }) => match changes {
-            Some(changes) => apply_code_edit(src, url, changes),
-            None => panic!("No text edit found"),
-        },
-        _ => panic!("No workspace edit found"),
-    }
-}
-
-// This function replicates how the text editor applies TextEdit
-fn apply_code_edit(
-    src: &str,
-    url: &Url,
-    changes: &HashMap<Url, Vec<lsp_types::TextEdit>>,
-) -> String {
-    let mut result = src.to_string();
-    let line_numbers = LineNumbers::new(src);
-    let mut offset = 0;
-    for (change_url, change) in changes {
-        if url != change_url {
-            panic!("Unknown url {}", change_url)
-        }
-        for edit in change {
-            let start =
-                line_numbers.byte_index(edit.range.start.line, edit.range.start.character) - offset;
-            let end =
-                line_numbers.byte_index(edit.range.end.line, edit.range.end.character) - offset;
-            let range = (start as usize)..(end as usize);
-            offset += end - start;
-            result.replace_range(range, &edit.new_text);
-        }
-    }
-    result
 }
 
 #[test]

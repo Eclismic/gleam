@@ -66,6 +66,7 @@ fn inline_usage(
                         new_text: "".into(),
                     }]
                 } else {
+                    cov_mark::hit!(do_not_delete_let);
                     vec![]
                 };
 
@@ -101,11 +102,11 @@ fn inline_let(
                 .collect();
 
             if usages.is_empty() {
-                cov_mark::hit!(do_not_inline);
+                cov_mark::hit!(do_not_inline_unused);
                 return None;
             }
 
-            let value_to_inline = assignment.value.to_string()?;
+            let let_val_str = assignment.value.to_string()?;
 
             let mut edits: Vec<lsp_types::TextEdit> = Vec::with_capacity(usages.len() + 1);
             edits.push(lsp_types::TextEdit {
@@ -115,7 +116,7 @@ fn inline_let(
 
             edits.extend(usages.iter().map(|usage| lsp_types::TextEdit {
                 range: src_span_to_lsp_range(usage.location(), &line_numbers),
-                new_text: value_to_inline.to_string(),
+                new_text: let_val_str.to_string(),
             }));
 
             Some(edits)
