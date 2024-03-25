@@ -101,7 +101,7 @@ fn inline_let(
                 .collect();
 
             if usages.is_empty() {
-                cov_mark::hit!(do_not_inline);
+                cov_mark::hit!(do_not_inline_unused);
                 return None;
             }
 

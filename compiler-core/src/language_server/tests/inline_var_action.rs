@@ -515,7 +515,7 @@ fn main() {
 
 #[test]
 fn test_inline_local_var_do_not_inline_unused_var() {
-    cov_mark::check!(do_not_inline);
+    cov_mark::check!(do_not_inline_unused);
     assert_code_action!(
         r#"
     import list
