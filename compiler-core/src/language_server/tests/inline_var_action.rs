@@ -177,6 +177,7 @@ fn adjust_code_for_offset(start: u32, end: u32, offset: i32) -> std::ops::Range<
     adjusted_start..adjusted_end
 }
 
+//Inline Let
 #[test]
 fn test_inline_local_var_into_multiple_call_let() {
     assert_code_action!(
@@ -399,6 +400,7 @@ fn main() {
 // Inline Usage
 #[test]
 fn test_inline_local_var_no_delete_let_usage() {
+    cov_mark::check!(do_not_delete_let);
     assert_code_action!(
         r#"
 import list
