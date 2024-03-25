@@ -150,8 +150,11 @@ pub enum TypedExpr {
 }
 
 impl TypedExpr {
-    // This could be optimised in places to exit early if the first of a series
-    // of expressions is after the byte index.
+    // Not inclusive for end, see contains method:
+    //
+    // pub fn contains(&self, byte_index: u32) -> bool {
+    //     byte_index >= self.start && byte_index < self.end
+    // }
     pub fn find_node(&self, byte_index: u32) -> Option<Located<'_>> {
         match self {
             Self::Var { .. }
@@ -162,40 +165,103 @@ impl TypedExpr {
             | Self::String { .. }
             | Self::ModuleSelect { .. } => self.self_if_contains_location(byte_index),
 
+            //Skip searching for node in assignments on Pipeline in case byte_index is beyond.
+            //Node should be found in the finally.
             Self::Pipeline {
                 assignments,
                 finally,
                 ..
-            } => assignments
-                .iter()
-                .find_map(|e| e.find_node(byte_index))
-                .or_else(|| finally.find_node(byte_index)),
+            } => {
+                if assignments
+                    .first()
+                    .is_some_and(|a| byte_index >= a.location.start)
+                    && assignments
+                        .last()
+                        .is_some_and(|a| byte_index < a.location.end)
+                {
+                    if let Some(located) = assignments.iter().find_map(|a| a.find_node(byte_index))
+                    {
+                        return Some(located);
+                    }
 
-            Self::Block { statements, .. } => {
-                statements.iter().find_map(|e| e.find_node(byte_index))
+                    return None;
+                }
+
+                finally.find_node(byte_index)
             }
 
+            //Early exit possible
+            Self::Block { statements, .. } => {
+                for statement in statements {
+                    if statement.location().start > byte_index {
+                        cov_mark::hit!(early_exit_block);
+                        break;
+                    }
+
+                    if let Some(located) = statement.find_node(byte_index) {
+                        return Some(located);
+                    }
+                }
+
+                None
+            }
+
+            // In case [1, 2, 3] and byte search 2
+            // then you should get the list back, and not an element from the list.
             Self::Tuple {
                 elems: expressions, ..
             }
             | Self::List {
                 elements: expressions,
                 ..
-            } => expressions
-                .iter()
-                .find_map(|e| e.find_node(byte_index))
-                .or_else(|| self.self_if_contains_location(byte_index)),
+            } => {
+                for expression in expressions {
+                    if expression.location().start > byte_index {
+                        cov_mark::hit!(early_exit_tuple_list);
+                        break;
+                    }
+
+                    if let Some(located) = expression.find_node(byte_index) {
+                        return Some(located);
+                    }
+                }
+
+                self.self_if_contains_location(byte_index)
+            }
 
             Self::NegateBool { value, .. } | Self::NegateInt { value, .. } => value
                 .find_node(byte_index)
                 .or_else(|| self.self_if_contains_location(byte_index)),
 
-            Self::Fn { body, args, .. } => args
-                .iter()
-                .find_map(|arg| arg.find_node(byte_index))
-                .or_else(|| body.iter().find_map(|s| s.find_node(byte_index)))
-                .or_else(|| self.self_if_contains_location(byte_index)),
+            //Skip searching for node in fn parameters in case byteindex is beyond.
+            //Same goes for the body of the fn.
+            //If the node is not considered an expression inside the arguments or body, return fn it self.
+            Self::Fn { body, args, .. } => {
+                if args.first().is_some_and(|a| byte_index >= a.location.start)
+                    && args.last().is_some_and(|a| byte_index < a.location.end)
+                {
+                    if let Some(located) = args.iter().find_map(|arg| arg.find_node(byte_index)) {
+                        return Some(located);
+                    }
 
+                    return None;
+                }
+
+                if byte_index >= body.first().location().start
+                    && byte_index < body.last().location().end
+                {
+                    if let Some(located) = body.iter().find_map(|s| s.find_node(byte_index)) {
+                        return Some(located);
+                    }
+                    return None;
+                }
+
+                self.self_if_contains_location(byte_index)
+            }
+
+            //Not able to find optimization due to failing hover tests...
+            //In case the byte index corresponds with the ',' between 1 and 2 in the args: (1, 2)
+            //break, and you could possibly immediately return the result self.self_if_contains_location()
             Self::Call { fun, args, .. } => args
                 .iter()
                 .find_map(|arg| arg.find_node(byte_index))
@@ -208,11 +274,22 @@ impl TypedExpr {
 
             Self::Case {
                 subjects, clauses, ..
-            } => subjects
-                .iter()
-                .find_map(|subject| subject.find_node(byte_index))
-                .or_else(|| clauses.iter().find_map(|c| c.find_node(byte_index)))
-                .or_else(|| self.self_if_contains_location(byte_index)),
+            } => {
+                if subjects
+                    .last()
+                    .is_some_and(|s| byte_index < s.location().end)
+                {
+                    return subjects
+                        .iter()
+                        .find_map(|subject| subject.find_node(byte_index))
+                        .or_else(|| self.self_if_contains_location(byte_index));
+                }
+
+                clauses
+                    .iter()
+                    .find_map(|c| c.find_node(byte_index))
+                    .or_else(|| self.self_if_contains_location(byte_index))
+            }
 
             Self::RecordAccess {
                 record: expression, ..
