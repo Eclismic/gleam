@@ -1,6 +1,7 @@
 use crate::{
     ast::{
-        Arg, Definition, Function, Import, ModuleConstant, TypedDefinition, TypedExpr, TypedPattern,
+        Arg, Definition, Function, Import, ModuleConstant, Statement, TypedDefinition,
+        TypedExpr, TypedPattern,
     },
     build::{Located, Module},
     config::PackageConfig,
@@ -21,8 +22,11 @@ use std::sync::Arc;
 use strum::IntoEnumIterator;
 
 use super::{
-    code_action::CodeActionBuilder, src_span_to_lsp_range, DownloadDependencies, MakeLocker,
+    code_action::{CodeActionBuilder, CodeActionData}, determine_resolve_strategy, src_span_to_lsp_range, DownloadDependencies, MakeLocker, ResolveStrategy
 };
+
+mod inline_var_handler;
+mod pipeline_handler;
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Response<T> {
@@ -242,17 +246,47 @@ where
     pub fn action(&mut self, params: lsp::CodeActionParams) -> Response<Option<Vec<CodeAction>>> {
         self.respond(|this| {
             let mut actions = vec![];
+
+            let resolve_strategy = determine_resolve_strategy(&params);
+
             let Some(module) = this.module_for_uri(&params.text_document.uri) else {
                 return Ok(None);
             };
 
             code_action_unused_imports(module, &params, &mut actions);
+            inline_var_handler::inline_local_variable(module, &params, &mut actions);
+            pipeline_handler::convert_to_pipeline(module, &params, &mut actions, resolve_strategy);
 
             Ok(if actions.is_empty() {
                 None
             } else {
                 Some(actions)
             })
+        })
+    }
+
+    pub fn resolve_action(&mut self, params: CodeActionData) -> Response<Option<CodeAction>> {
+        self.respond(|this| {
+            let module = this
+                .module_for_uri(&params.code_action_params.text_document.uri)
+                .expect("module");
+
+            let codeaction_params = &params.code_action_params;
+
+            let mut actions = vec![];
+            match params.id{
+                super::code_action::ActionId::Pipeline => pipeline_handler::convert_to_pipeline(
+                            module,
+                            codeaction_params,
+                            &mut actions,
+                            ResolveStrategy::Eager,
+                        ),
+                _ => return Ok(None)
+            }
+        
+            let action = actions.first().unwrap().to_owned();
+
+            Ok(Some(action))
         })
     }
 
@@ -267,6 +301,7 @@ where
         } else {
             Compilation::No
         };
+
         Response {
             result,
             warnings,
@@ -610,6 +645,7 @@ fn hover_for_expression(
 fn range_includes(outer: &lsp_types::Range, inner: &lsp_types::Range) -> bool {
     (outer.start >= inner.start && outer.start <= inner.end)
         || (outer.end >= inner.start && outer.end <= inner.end)
+        || (inner.start >= outer.start && inner.end <= outer.end)
 }
 
 fn code_action_unused_imports(

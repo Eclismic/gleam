@@ -232,6 +232,13 @@ fn find_node_sequence() {
 }
 
 #[test]
+fn find_node_sequence_early_exit() {
+    let block = compile_expression(r#"{ 1 2 3 }"#);
+    cov_mark::check!(early_exit_block);
+    assert!(block.find_node(1).is_none());
+}
+
+#[test]
 fn find_node_list() {
     let statement = compile_expression(r#"[1, 2, 3]"#);
     let list = get_bare_expression(&statement);
@@ -262,6 +269,15 @@ fn find_node_list() {
     assert_eq!(list.find_node(7), Some(Located::Expression(&int3)));
     assert_eq!(list.find_node(8), Some(Located::Expression(list)));
     assert_eq!(list.find_node(9), None);
+}
+
+#[test]
+fn find_node_list_early_exit() {
+    let statement = compile_expression(r#"[1, 2, 3]"#);
+    let list = get_bare_expression(&statement);
+
+    cov_mark::check!(early_exit_tuple_list);
+    assert_eq!(list.find_node(2), Some(Located::Expression(list)));
 }
 
 #[test]
@@ -296,6 +312,15 @@ fn find_node_tuple() {
     assert_eq!(tuple.find_node(8), Some(Located::Expression(&int3)));
     assert_eq!(tuple.find_node(9), Some(Located::Expression(tuple)));
     assert_eq!(tuple.find_node(10), None);
+}
+
+#[test]
+fn find_node_tuple_early_exit() {
+    let statement = compile_expression(r#"#(1, 2, 3)"#);
+    let tuple = get_bare_expression(&statement);
+
+    cov_mark::check!(early_exit_tuple_list);
+    assert_eq!(tuple.find_node(3), Some(Located::Expression(tuple)));
 }
 
 #[test]
@@ -473,6 +498,7 @@ case 1, 2 {
 
     assert_eq!(case.find_node(1), Some(Located::Expression(case)));
     assert_eq!(case.find_node(6), Some(Located::Expression(&int1)));
+    assert_eq!(case.find_node(7), Some(Located::Expression(case)));
     assert_eq!(case.find_node(9), Some(Located::Expression(&int2)));
     assert_eq!(case.find_node(23), Some(Located::Expression(&int3)));
     assert_eq!(case.find_node(25), Some(Located::Expression(case)));
@@ -566,4 +592,95 @@ use x <- fn(f) { f(1) }
     assert!(use_.find_node(23).is_some());
 
     assert!(use_.find_node(26).is_some()); // The int
+}
+
+#[test]
+fn find_node_pipeline() {
+    let module = compile_module(
+        r#"
+        pub fn main(){
+          let x = [1,2,3]
+          let result =
+          x
+          |> reverse()
+          |> fn(a) { let int1 = 1 a}
+        }
+
+        pub fn reverse(xs: List(a)) -> List(a) {
+            do_reverse(xs)
+        }
+
+        fn do_reverse(list) {
+            do_reverse_acc(list, [])
+        }
+
+        fn do_reverse_acc(remaining, accumulator) {
+            case remaining {
+                [] -> accumulator
+                [item, ..rest] -> do_reverse_acc(rest, [item, ..accumulator])
+            }
+        }
+        "#,
+    );
+
+    let int1 = TypedExpr::Int {
+        location: SrcSpan {
+            start: 140,
+            end: 141,
+        },
+        typ: type_::int(),
+        value: "1".into(),
+    };
+
+    assert_eq!(module.find_node(140), Some(Located::Expression(&int1)));
+}
+
+#[test]
+fn find_node_with_pruning_typeddefinition() {
+    let module = compile_module(
+        r#"
+pub fn main() {
+    1
+}
+
+fn test1() {
+    2
+}
+
+fn i_am_here(){
+    3
+}
+        "#,
+    );
+
+    let int3 = TypedExpr::Int {
+        location: SrcSpan { start: 68, end: 69 },
+        typ: type_::int(),
+        value: "3".into(),
+    };
+
+    cov_mark::check!(prune_function_definition);
+    assert_eq!(module.find_node(68), Some(Located::Expression(&int3)));
+}
+
+#[test]
+fn find_node_with_pruning_statement() {
+    let module = compile_module(
+        r#"
+pub fn main() {
+    let s1 = 1
+    let s2 = 2
+    let s3 = 3
+}
+        "#,
+    );
+
+    let int3 = TypedExpr::Int {
+        location: SrcSpan { start: 60, end: 61 },
+        typ: type_::int(),
+        value: "3".into(),
+    };
+
+    cov_mark::check!(prune_statement);
+    assert_eq!(module.find_node(60), Some(Located::Expression(&int3)));
 }
