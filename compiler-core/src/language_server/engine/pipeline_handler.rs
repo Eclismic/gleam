@@ -1,4 +1,4 @@
-use std::time::Instant;
+//use std::time::Instant;
 
 use crate::{ast::SrcSpan, language_server::code_action::ActionId};
 
@@ -10,25 +10,21 @@ pub fn convert_to_pipeline(
     actions: &mut Vec<CodeAction>,
     strategy: ResolveStrategy,
 ) {
-    let before = Instant::now();
+    //let before = Instant::now();
 
     let uri = &params.text_document.uri;
     let line_numbers = LineNumbers::new(&module.code);
     let byte_index = line_numbers.byte_index(params.range.start.line, params.range.start.character);
 
-    let (call_expression, location) = match module.find_node(byte_index) {
-        Some(Located::Expression(expr)) => {
-            if let TypedExpr::Call { .. } = expr {
-                (expr, expr.location().start)
-            } else {
-                return;
-            }
+    let (potential_call_expression, location) = match module.find_node(byte_index) {
+        Some(Located::Expression(expr)) if matches!(expr, TypedExpr::Call { .. }) => {
+            (expr, expr.location().start)
         }
         _ => return,
     };
 
     let mut call_chain: Vec<&TypedExpr> = Vec::new();
-    detect_call_chain_conversion_to_pipeline(&call_expression, &mut call_chain);
+    detect_call_chain(&potential_call_expression, &mut call_chain);
 
     if call_chain.is_empty() {
         cov_mark::hit!(chain_is_empty);
@@ -39,6 +35,7 @@ pub fn convert_to_pipeline(
         let pipeline_parts = match convert_call_chain_to_pipeline(call_chain) {
             Some(parts) => parts,
             //input for pipeline cannot be stringified
+            //so no code action to be suggested
             None => return,
         };
 
@@ -60,36 +57,28 @@ pub fn convert_to_pipeline(
             .preferred(true)
             .push_to(actions);
     }
-    dbg!(before.elapsed());
+    //dbg!(before.elapsed());
 }
 
-fn detect_call_chain_conversion_to_pipeline<'a>(
+fn detect_call_chain<'a>(
     call_expression: &'a TypedExpr,
     call_chain: &mut Vec<&'a TypedExpr>,
 ) {
     if let TypedExpr::Call { args, .. } = call_expression {
-        let arg = match args.first() {
-            Some(arg) => {
-                //Maybe need to change this to check if call is part of pipeline expression
-                //Instead of checking if there is an invisible callarg named _pipe
-                if let TypedExpr::Var { name, .. } = &arg.value {
-                    if name == "_pipe" {
-                        cov_mark::hit!(empty_call_chain_as_part_of_pipeline);
-                        return;
-                    }
+        if let Some(arg) = args.first() {
+            if let TypedExpr::Var { name, .. } = &arg.value {
+                if name == "_pipe" {
+                    cov_mark::hit!(empty_call_chain_as_part_of_pipeline);
+                    return;
                 }
-                call_chain.push(call_expression);
-                arg
             }
-            None => return,
-        };
 
-        //recurse on it's first argument
-        match &arg.value {
-            TypedExpr::Call { .. } => {
-                detect_call_chain_conversion_to_pipeline(&arg.value, call_chain)
+            call_chain.push(call_expression);
+            
+            // Recurse on its first argument to detect the full call chain
+            if let TypedExpr::Call { .. } = &arg.value {
+                detect_call_chain(&arg.value, call_chain);
             }
-            _ => (),
         }
     }
 }
@@ -97,54 +86,46 @@ fn detect_call_chain_conversion_to_pipeline<'a>(
 fn convert_call_chain_to_pipeline(mut call_chain: Vec<&TypedExpr>) -> Option<PipelineParts> {
     call_chain.reverse();
 
+    //remove the first argument in order to convert the chain to its piped equivalent.
     let modified_chain: Vec<_> = call_chain
         .iter()
         .filter_map(|expr| {
-            if let TypedExpr::Call {
-                location,
-                typ,
-                fun,
-                args,
-            } = expr
-            {
-                if args.len() > 0 {
-                    let mut new_args = args.clone();
-                    let _ = new_args.drain(..1);
-
+            match expr {
+                TypedExpr::Call {
+                    location,
+                    typ,
+                    fun,
+                    args,
+                } if !args.is_empty() => {
+                    let args = args[1..].to_vec();
                     Some(TypedExpr::Call {
                         location: location.clone(),
                         typ: typ.clone(),
                         fun: fun.clone(),
-                        args: new_args,
+                        args,
                     })
-                } else {
-                    //call without args; no need to remove the first arg
-                    //this is probably the input to the pipeline
-                    None
                 }
-            } else {
-                None
+                _ => None,
             }
         })
         .collect();
 
-    let first_chain = call_chain.first().expect("There is a first element");
+    //We need the last call in order retrieve the input for the pipeline.
+    let last_call = call_chain.first()?;
 
-    //Returns None in case the input cannot be stringified
-    let input = match first_chain {
-        TypedExpr::Call { args, .. } => {
-            if let Some(arg) = args.first() {
-                arg.value.to_string()
-            } else {
-                first_chain.to_string()
-            }
-        }
+    //Returns None in case the input for the pipeline cannot be stringified.
+    //There is no code action to be suggested.
+    let input = match last_call {
+        TypedExpr::Call { args, .. } => args.first()?.value.to_string()?,
         _ => return None,
-    }?;
+    };
 
     Some(PipelineParts {
         input,
-        location: call_chain.last().expect("there is a last one").location(),
+        //Pipeline conversion should be placed on top of the nested call expression.
+        //the range of that call chain is captured in the location of the initial call.
+        //Because of reverse() the initial call of the chain is moved to the last spot in the vec.
+        location: call_chain.last()?.location(),
         calls: modified_chain,
     })
 }
@@ -164,6 +145,8 @@ fn create_edit(
 
     edit_str.push_str(&format!("{} \n", pipeline_parts.input));
 
+    //In case there is a typed expression for which we do not have a string representation,
+    //the function should return None. Indicating there is no code action possible here.
     if let Err(()) = pipeline_parts
         .calls
         .iter()
