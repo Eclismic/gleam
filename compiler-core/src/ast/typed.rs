@@ -165,8 +165,8 @@ impl TypedExpr {
             | Self::String { .. }
             | Self::ModuleSelect { .. } => self.self_if_contains_location(byte_index),
 
-            //Skip assignments on Pipeline in case byte_index is beyond
-            //Node should be found in the finally
+            //Skip searching for node in assignments on Pipeline in case byte_index is beyond.
+            //Node should be found in the finally.
             Self::Pipeline {
                 assignments,
                 finally,
@@ -174,10 +174,10 @@ impl TypedExpr {
             } => {
                 if assignments
                     .first()
-                    .is_some_and(|a| a.location.start >= byte_index)
+                    .is_some_and(|a| byte_index >= a.location.start)
                     && assignments
                         .last()
-                        .is_some_and(|a| a.location.end > byte_index)
+                        .is_some_and(|a| byte_index < a.location.end)
                 {
                     if let Some(located) = assignments.iter().find_map(|a| a.find_node(byte_index))
                     {
@@ -233,6 +233,9 @@ impl TypedExpr {
                 .find_node(byte_index)
                 .or_else(|| self.self_if_contains_location(byte_index)),
 
+            //Skip searching for node in fn parameters in case byteindex is beyond.
+            //Same goes for the body of the fn.
+            //If the node is not considered an expression inside the arguments or body, return fn it self.
             Self::Fn { body, args, .. } => {
                 if args.first().is_some_and(|a| byte_index >= a.location.start)
                     && args.last().is_some_and(|a| byte_index < a.location.end)
