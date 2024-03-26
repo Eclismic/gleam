@@ -450,14 +450,7 @@ where
     }
 
     fn code_action_resolve(&mut self, params: lsp::CodeAction) -> (Json, Feedback) {
-        let params = match serde_json::from_value::<CodeActionData>(params.data.unwrap()) {
-            Ok(params) => params,
-            Err(err) => {
-                // Handle the error appropriately. Here, I'm just printing it.
-                eprintln!("Error deserializing params: {:?}", err);
-                return (Json::Null, Feedback::default());
-            }
-        };
+        let params = serde_json::from_value::<CodeActionData>(params.data.unwrap()).expect("CodeActionData should be the result of a lazy resolved code action");
         let path = path(&params.code_action_params.text_document.uri);
         self.respond_with_engine(path, |engine| engine.resolve_action(params))
     }
@@ -497,7 +490,6 @@ fn initialisation_handshake(connection: &lsp_server::Connection) -> InitializePa
         document_highlight_provider: None,
         document_symbol_provider: None,
         workspace_symbol_provider: None,
-        //code_action_provider: Some(lsp::CodeActionProviderCapability::Simple(true)),
         code_action_provider: Some(lsp::CodeActionProviderCapability::Options(
             lsp::CodeActionOptions {
                 code_action_kinds: Some(vec![
