@@ -265,6 +265,9 @@ where
         })
     }
 
+    //The matched code action handler will revalidate its code action for the provided params.
+    //There can possibly be more code actions returned for the provided params.
+    //Find the fully resolved code action which will be inserted at the same place as the lazily resolved code action.
     pub fn resolve_action(&mut self, params: CodeActionData) -> Response<Option<CodeAction>> {
         self.respond(|this| {
             let module = this
@@ -272,6 +275,7 @@ where
                 .expect("module");
 
             let codeaction_params = &params.code_action_params;
+            let location_to_be_resolved = params.location;
 
             let mut actions = vec![];
             match params.id{
@@ -283,9 +287,21 @@ where
                         ),
                 _ => return Ok(None)
             }
-        
-            let action = actions.first().unwrap().to_owned();
 
+            let action = actions
+            .into_iter()
+            .find_map(|mut action| {
+                if let Some(data) = action.data.take() {
+                    match serde_json::from_value::<CodeActionData>(data) {
+                        Ok(data) if data.location == location_to_be_resolved => Some(action),
+                        _ => None,
+                    }
+                } else {
+                    None
+                }
+            })
+            .expect("Could not find resolve code action requested by the resolve request.");
+        
             Ok(Some(action))
         })
     }

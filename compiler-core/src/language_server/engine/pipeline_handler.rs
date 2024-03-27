@@ -47,13 +47,14 @@ pub fn convert_to_pipeline(
             CodeActionBuilder::new("Apply Pipeline Rewrite")
                 .kind(lsp_types::CodeActionKind::REFACTOR_REWRITE)
                 .changes(uri.clone(), vec![edit])
+                .data(ActionId::Pipeline, params.clone(), location)
                 .preferred(true)
                 .push_to(actions);
         }
     } else {
         CodeActionBuilder::new("Apply Pipeline Rewrite")
             .kind(lsp_types::CodeActionKind::REFACTOR_REWRITE)
-            .data(ActionId::Pipeline, params.clone())
+            .data(ActionId::Pipeline, params.clone(), location)
             .preferred(true)
             .push_to(actions);
     }
