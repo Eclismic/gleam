@@ -265,9 +265,10 @@ where
         })
     }
 
-    //The matched code action handler will revalidate its code action for the provided params.
+    //The matched code action handler will revalidate the code action for the provided params.
     //There can possibly be more code actions returned for the provided params.
-    //Find the fully resolved code action which will be inserted at the same place as the lazily resolved code action.
+    //So to find the correct code action, 
+    //check that the location of the lazy resolved code action corresponds to the location of the now fully resolved code action.
     pub fn resolve_action(&mut self, params: CodeActionData) -> Response<Option<CodeAction>> {
         self.respond(|this| {
             let module = this
@@ -300,7 +301,7 @@ where
                     None
                 }
             })
-            .expect("Could not find resolve code action requested by the resolve request.");
+            .expect("Could not resolve code action requested by the resolve request.");
         
             Ok(Some(action))
         })
