@@ -3,6 +3,7 @@ mod completion;
 mod pipeline_action;
 mod hover;
 mod inline_var_action;
+mod multiple_code_actions;
 
 use std::{
     collections::HashMap,

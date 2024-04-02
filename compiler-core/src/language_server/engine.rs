@@ -1,7 +1,7 @@
+
 use crate::{
     ast::{
-        Arg, Definition, Function, Import, ModuleConstant, Statement, TypedDefinition,
-        TypedExpr, TypedPattern,
+        Arg, Assignment, Definition, Function, Import, ModuleConstant, Pattern, Statement, TypedDefinition, TypedExpr, TypedPattern
     },
     build::{Located, Module},
     config::PackageConfig,
@@ -253,9 +253,15 @@ where
                 return Ok(None);
             };
 
+            let line_numbers = LineNumbers::new(&module.code);
+            let start: u32 = line_numbers.byte_index(params.range.start.line, params.range.start.character);
+            let end = line_numbers.byte_index(params.range.end.line, params.range.end.character);
+
+            let nodes = retrieve_statement_expression_nodes_from_ast(start, end, module);
+
             code_action_unused_imports(module, &params, &mut actions);
-            inline_var_handler::inline_local_variable(module, &params, &mut actions);
-            pipeline_handler::convert_to_pipeline(module, &params, &mut actions, resolve_strategy);
+            inline_var_handler::inline_local_variable(module, &params, &mut actions, &nodes);
+            pipeline_handler::convert_to_pipeline(module, &params, &mut actions,  resolve_strategy, &nodes,);
 
             Ok(if actions.is_empty() {
                 None
@@ -275,8 +281,15 @@ where
                 .module_for_uri(&params.code_action_params.text_document.uri)
                 .expect("module");
 
+            let line_numbers = LineNumbers::new(&module.code);
+
             let codeaction_params = &params.code_action_params;
             let location_to_be_resolved = params.location;
+
+            let start: u32 = line_numbers.byte_index(codeaction_params.range.start.line, codeaction_params.range.start.character);
+            let end = line_numbers.byte_index(codeaction_params.range.end.line, codeaction_params.range.end.character);
+
+            let nodes = retrieve_statement_expression_nodes_from_ast(start, end, module);
 
             let mut actions = vec![];
             match params.id{
@@ -285,6 +298,7 @@ where
                             codeaction_params,
                             &mut actions,
                             ResolveStrategy::Eager,
+                            &nodes
                         ),
                 _ => return Ok(None)
             }
@@ -747,4 +761,49 @@ fn get_hexdocs_link_section(
 
     let link = format!("https://hexdocs.pm/{package_name}/{module_name}.html#{name}");
     Some(format!("\nView on [HexDocs]({link})"))
+}
+
+fn retrieve_statement_expression_nodes_from_ast<'a>(
+    start: u32,
+    end: u32,
+    module: &'a Module,
+) -> Vec<Located<'a>> {
+    let mut nodes = Vec::new();
+    let mut i = start;
+
+    while i < end {
+        if let Some(located) = module.find_node(i) {
+            match located {
+                Located::Statement(statement) => {
+                    match statement {
+                        Statement::Expression(expr) => {
+                            nodes.push(located);
+                            i = expr.location().end
+                        }
+                        Statement::Assignment(assignment) if matches_assignment_pattern(&assignment) => {
+                            nodes.push(located);
+                            i = assignment.location.end
+                        }
+                        _ => {},
+                    }
+                },
+                Located::Expression(expr) => {
+                    nodes.push(located);
+                    i = expr.location().end
+                },
+                _ => {}
+            }
+        }
+        i += 1;
+    }
+
+    nodes
+}
+
+fn matches_assignment_pattern(assignment: &Assignment<Arc<Type>, TypedExpr>) -> bool {
+    if let Pattern::Variable {  .. } = assignment.pattern {
+        true
+    } else {
+        false
+    }
 }

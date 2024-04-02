@@ -7,33 +7,36 @@ pub fn inline_local_variable(
     module: &Module,
     params: &lsp::CodeActionParams,
     actions: &mut Vec<CodeAction>,
+    nodes: &Vec<Located<'_>>
 ) {
     let uri = &params.text_document.uri;
     let line_numbers = LineNumbers::new(&module.code);
     let byte_index = line_numbers.byte_index(params.range.start.line, params.range.start.character);
 
-    let edits = match module.find_node(byte_index) {
-        Some(Located::Expression(e)) => inline_usage(e, line_numbers, module, byte_index),
-        Some(Located::Statement(Statement::Assignment(a)))
+    let text_edits: Vec<_> = nodes.iter().filter_map(|node| {
+        match node {
+        Located::Expression(e) => inline_usage(e, &line_numbers, module, byte_index),
+        Located::Statement(Statement::Assignment(a))
             if matches!(a.pattern, Pattern::Variable { .. }) =>
         {
-            inline_let(&a, line_numbers, module, byte_index)
+            inline_let(&a, &line_numbers, module, byte_index)
         }
         _ => None,
-    };
+    }}).collect();
 
-    if let Some(edits) = edits {
+    for text_edit in text_edits{
         CodeActionBuilder::new("Inline Variable Refactor")
-            .kind(lsp_types::CodeActionKind::REFACTOR_INLINE)
-            .changes(uri.clone(), edits)
-            .preferred(true)
-            .push_to(actions);
+                .kind(lsp_types::CodeActionKind::REFACTOR_INLINE)
+                .changes(uri.clone(), text_edit)
+                .preferred(true)
+                .push_to(actions);
     }
 }
 
+
 fn inline_usage(
     e: &TypedExpr,
-    line_numbers: LineNumbers,
+    line_numbers: &LineNumbers,
     module: &Module,
     byte_index: u32,
 ) -> Option<Vec<lsp_types::TextEdit>> {
@@ -84,7 +87,7 @@ fn inline_usage(
 
 fn inline_let(
     assignment: &Assignment<Arc<Type>, TypedExpr>,
-    line_numbers: LineNumbers,
+    line_numbers: &LineNumbers,
     module: &Module,
     byte_index: u32,
 ) -> Option<Vec<lsp_types::TextEdit>> {

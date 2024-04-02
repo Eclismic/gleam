@@ -114,6 +114,19 @@ fn inline_variable_refactor(
             .find(|action| action.title == "Inline Variable Refactor")
     });
 
+    // let response = engine.action(params).result.unwrap().and_then(|actions| {
+    //     actions
+    //         .into_iter()
+    //         .filter_map(|action| {
+    //             if action.title == "Inline Variable Refactor" {
+    //                 Some(action)
+    //             } else {
+    //                 None
+    //             }
+    //         })
+    //         .last()
+    // });
+
     if let Some(action) = response {
         apply_code_action(src, &url, &action)
     } else {
@@ -483,3 +496,4 @@ fn test_inline_local_var_do_not_inline_unused_var() {
         false
     );
 }
+

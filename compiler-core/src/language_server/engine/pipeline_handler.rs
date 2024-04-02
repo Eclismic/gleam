@@ -9,56 +9,89 @@ pub fn convert_to_pipeline(
     params: &lsp::CodeActionParams,
     actions: &mut Vec<CodeAction>,
     strategy: ResolveStrategy,
+    nodes: &Vec<Located<'_>>
 ) {
     //let before = Instant::now();
 
     let uri = &params.text_document.uri;
     let line_numbers = LineNumbers::new(&module.code);
-    let byte_index = line_numbers.byte_index(params.range.start.line, params.range.start.character);
 
-    let (potential_call_expression, location) = match module.find_node(byte_index) {
-        Some(Located::Expression(expr)) if matches!(expr, TypedExpr::Call { .. }) => {
-            (expr, expr.location().start)
+    nodes.iter().filter_map(|node| {
+
+        match node{
+            Located::Expression(expr) => {
+                if let TypedExpr::Call { .. } = expr {
+                    Some((*expr, expr.location().start))
+                } else{
+                    None
+                }
+            },
+            Located::Statement(Statement::Assignment(assign)) =>{
+                if let TypedExpr::Call {..} = *assign.value{
+                    Some((&assign.value, assign.value.location().start))
+                } else{
+                    None
+                }
+            }
+            _ => None
         }
-        _ => return,
-    };
+    }).for_each(|call| {
+        let mut call_chain: Vec<&TypedExpr> = Vec::new();
 
-    let mut call_chain: Vec<&TypedExpr> = Vec::new();
-    detect_call_chain(&potential_call_expression, &mut call_chain);
+        detect_call_chain(call.0, &mut call_chain);
 
-    if call_chain.is_empty() {
-        cov_mark::hit!(chain_is_empty);
-        return;
-    }
+        if call_chain.is_empty() {
+            cov_mark::hit!(chain_is_empty);
+            return;
+        }
+    
+        // let pipeline_parts = match convert_call_chain_to_pipeline(call_chain) {
+        //     Some(parts) => parts,
+        //     //input for pipeline cannot be stringified
+        //     None => return,
+        // };
+    
+        // //location is where the original call expression started
+        // //this is also the place where we want to insert the piped conversion
+        // let indent = line_numbers.line_and_column_number(call.1).column - 1;
+    
+        // if let Some(edit) = create_edit(pipeline_parts, &line_numbers, indent) {
+        //     CodeActionBuilder::new("Apply Pipeline Rewrite")
+        //         .kind(lsp_types::CodeActionKind::REFACTOR_REWRITE)
+        //         .changes(uri.clone(), vec![edit])
+        //         .preferred(true)
+        //         .push_to(actions);
+        // }
 
-    if strategy.is_eager() {
-        let pipeline_parts = match convert_call_chain_to_pipeline(call_chain) {
-            Some(parts) => parts,
-            //input for pipeline cannot be stringified
-            //so no code action to be suggested
-            None => return,
-        };
-
-        //location is where the original call expression started
-        //this is also the place where we want to insert the piped conversion
-        let indent = line_numbers.line_and_column_number(location).column - 1;
-
-        if let Some(edit) = create_edit(pipeline_parts, line_numbers, indent) {
+        if strategy.is_eager() {
+            let pipeline_parts = match convert_call_chain_to_pipeline(call_chain) {
+                Some(parts) => parts,
+                //input for pipeline cannot be stringified
+                //so no code action to be suggested
+                None => return,
+            };
+    
+            //location is where the original call expression started
+            //this is also the place where we want to insert the piped conversion
+            let indent = line_numbers.line_and_column_number(call.1).column - 1;
+    
+            if let Some(edit) = create_edit(pipeline_parts, &line_numbers, indent) {
+                CodeActionBuilder::new("Apply Pipeline Rewrite")
+                    .kind(lsp_types::CodeActionKind::REFACTOR_REWRITE)
+                    .changes(uri.clone(), vec![edit])
+                    .data(ActionId::Pipeline, params.clone(), call.1)
+                    .preferred(true)
+                    .push_to(actions);
+            }
+        } else {
             CodeActionBuilder::new("Apply Pipeline Rewrite")
                 .kind(lsp_types::CodeActionKind::REFACTOR_REWRITE)
-                .changes(uri.clone(), vec![edit])
-                .data(ActionId::Pipeline, params.clone(), location)
+                .data(ActionId::Pipeline, params.clone(), call.1)
                 .preferred(true)
                 .push_to(actions);
         }
-    } else {
-        CodeActionBuilder::new("Apply Pipeline Rewrite")
-            .kind(lsp_types::CodeActionKind::REFACTOR_REWRITE)
-            .data(ActionId::Pipeline, params.clone(), location)
-            .preferred(true)
-            .push_to(actions);
-    }
-    //dbg!(before.elapsed());
+    });
+
 }
 
 fn detect_call_chain<'a>(
@@ -139,7 +172,7 @@ struct PipelineParts {
 
 fn create_edit(
     pipeline_parts: PipelineParts,
-    line_numbers: LineNumbers,
+    line_numbers: &LineNumbers,
     indent: u32,
 ) -> Option<lsp::TextEdit> {
     let mut edit_str = EcoString::new();
