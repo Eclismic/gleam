@@ -257,7 +257,7 @@ where
             let start: u32 = line_numbers.byte_index(params.range.start.line, params.range.start.character);
             let end = line_numbers.byte_index(params.range.end.line, params.range.end.character);
 
-            let nodes = retrieve_statement_expression_nodes_from_ast(start, end, module);
+            let nodes = collect_statement_and_expression_nodes_from_ast(start, end, module);
 
             code_action_unused_imports(module, &params, &mut actions);
             inline_var_handler::inline_local_variable(module, &params, &mut actions, &nodes);
@@ -286,10 +286,10 @@ where
             let codeaction_params = &params.code_action_params;
             let location_to_be_resolved = params.location;
 
-            let start: u32 = line_numbers.byte_index(codeaction_params.range.start.line, codeaction_params.range.start.character);
+            let start    = line_numbers.byte_index(codeaction_params.range.start.line, codeaction_params.range.start.character);
             let end = line_numbers.byte_index(codeaction_params.range.end.line, codeaction_params.range.end.character);
 
-            let nodes = retrieve_statement_expression_nodes_from_ast(start, end, module);
+            let nodes = collect_statement_and_expression_nodes_from_ast(start, end, module);
 
             let mut actions = vec![];
             match params.id{
@@ -763,7 +763,7 @@ fn get_hexdocs_link_section(
     Some(format!("\nView on [HexDocs]({link})"))
 }
 
-fn retrieve_statement_expression_nodes_from_ast<'a>(
+fn collect_statement_and_expression_nodes_from_ast<'a>(
     start: u32,
     end: u32,
     module: &'a Module,
@@ -771,7 +771,7 @@ fn retrieve_statement_expression_nodes_from_ast<'a>(
     let mut nodes = Vec::new();
     let mut i = start;
 
-    while i < end {
+    while i <= end {
         if let Some(located) = module.find_node(i) {
             match located {
                 Located::Statement(statement) => {
@@ -796,7 +796,6 @@ fn retrieve_statement_expression_nodes_from_ast<'a>(
         }
         i += 1;
     }
-
     nodes
 }
 

@@ -13,34 +13,34 @@ pub fn inline_local_variable(
     let line_numbers = LineNumbers::new(&module.code);
     let byte_index = line_numbers.byte_index(params.range.start.line, params.range.start.character);
 
-    let text_edits: Vec<_> = nodes.iter().filter_map(|node| {
+    nodes.iter().filter_map(|node| {
         match node {
-        Located::Expression(e) => inline_usage(e, &line_numbers, module, byte_index),
-        Located::Statement(Statement::Assignment(a))
-            if matches!(a.pattern, Pattern::Variable { .. }) =>
-        {
-            inline_let(&a, &line_numbers, module, byte_index)
+            Located::Expression(expression) => inline_usage(expression, &line_numbers, module, byte_index),
+            Located::Statement(Statement::Assignment(assignment))
+                if matches!(assignment.pattern, Pattern::Variable { .. }) =>
+            {
+                inline_let(&assignment, &line_numbers, module, byte_index)
+            }
+            _ => None,
         }
-        _ => None,
-    }}).collect();
-
-    for text_edit in text_edits{
+    })
+    .for_each(|text_edit| {
         CodeActionBuilder::new("Inline Variable Refactor")
-                .kind(lsp_types::CodeActionKind::REFACTOR_INLINE)
-                .changes(uri.clone(), text_edit)
-                .preferred(true)
-                .push_to(actions);
-    }
+            .kind(lsp_types::CodeActionKind::REFACTOR_INLINE)
+            .changes(uri.clone(), text_edit)
+            .preferred(true)
+            .push_to(actions);
+    });
 }
 
 
 fn inline_usage(
-    e: &TypedExpr,
+    expression: &TypedExpr,
     line_numbers: &LineNumbers,
     module: &Module,
     byte_index: u32,
 ) -> Option<Vec<lsp_types::TextEdit>> {
-    if let Some(let_loc) = e
+    if let Some(let_loc) = expression
         .definition_location()
         .and_then(|def_loc| module.find_node(def_loc.span.start))
     {
@@ -74,7 +74,7 @@ fn inline_usage(
                 };
 
                 edits.push(lsp_types::TextEdit {
-                    range: src_span_to_lsp_range(e.location(), &line_numbers),
+                    range: src_span_to_lsp_range(expression.location(), &line_numbers),
                     new_text: let_val_str.to_string(),
                 });
                 return Some(edits);

@@ -21,14 +21,14 @@ pub fn convert_to_pipeline(
         match node{
             Located::Expression(expr) => {
                 if let TypedExpr::Call { .. } = expr {
-                    Some((*expr, expr.location().start))
+                    Some(CallExpression{ expression: expr, location: expr.location().start })
                 } else{
                     None
                 }
             },
             Located::Statement(Statement::Assignment(assign)) =>{
                 if let TypedExpr::Call {..} = *assign.value{
-                    Some((&assign.value, assign.value.location().start))
+                    Some(CallExpression{ expression: &*assign.value, location: assign.value.location().start })
                 } else{
                     None
                 }
@@ -38,30 +38,12 @@ pub fn convert_to_pipeline(
     }).for_each(|call| {
         let mut call_chain: Vec<&TypedExpr> = Vec::new();
 
-        detect_call_chain(call.0, &mut call_chain);
+        detect_call_chain(call.expression, &mut call_chain);
 
         if call_chain.is_empty() {
             cov_mark::hit!(chain_is_empty);
             return;
         }
-    
-        // let pipeline_parts = match convert_call_chain_to_pipeline(call_chain) {
-        //     Some(parts) => parts,
-        //     //input for pipeline cannot be stringified
-        //     None => return,
-        // };
-    
-        // //location is where the original call expression started
-        // //this is also the place where we want to insert the piped conversion
-        // let indent = line_numbers.line_and_column_number(call.1).column - 1;
-    
-        // if let Some(edit) = create_edit(pipeline_parts, &line_numbers, indent) {
-        //     CodeActionBuilder::new("Apply Pipeline Rewrite")
-        //         .kind(lsp_types::CodeActionKind::REFACTOR_REWRITE)
-        //         .changes(uri.clone(), vec![edit])
-        //         .preferred(true)
-        //         .push_to(actions);
-        // }
 
         if strategy.is_eager() {
             let pipeline_parts = match convert_call_chain_to_pipeline(call_chain) {
@@ -73,20 +55,20 @@ pub fn convert_to_pipeline(
     
             //location is where the original call expression started
             //this is also the place where we want to insert the piped conversion
-            let indent = line_numbers.line_and_column_number(call.1).column - 1;
+            let indent = line_numbers.line_and_column_number(call.location).column - 1;
     
             if let Some(edit) = create_edit(pipeline_parts, &line_numbers, indent) {
                 CodeActionBuilder::new("Apply Pipeline Rewrite")
                     .kind(lsp_types::CodeActionKind::REFACTOR_REWRITE)
                     .changes(uri.clone(), vec![edit])
-                    .data(ActionId::Pipeline, params.clone(), call.1)
+                    .data(ActionId::Pipeline, params.clone(), call.location)
                     .preferred(true)
                     .push_to(actions);
             }
         } else {
             CodeActionBuilder::new("Apply Pipeline Rewrite")
                 .kind(lsp_types::CodeActionKind::REFACTOR_REWRITE)
-                .data(ActionId::Pipeline, params.clone(), call.1)
+                .data(ActionId::Pipeline, params.clone(), call.location)
                 .preferred(true)
                 .push_to(actions);
         }
@@ -164,12 +146,6 @@ fn convert_call_chain_to_pipeline(mut call_chain: Vec<&TypedExpr>) -> Option<Pip
     })
 }
 
-struct PipelineParts {
-    input: EcoString,
-    location: SrcSpan,
-    calls: Vec<TypedExpr>,
-}
-
 fn create_edit(
     pipeline_parts: PipelineParts,
     line_numbers: &LineNumbers,
@@ -203,4 +179,15 @@ fn create_edit(
         range: src_span_to_lsp_range(pipeline_parts.location, &line_numbers),
         new_text: edit_str.to_string(),
     })
+}
+
+struct PipelineParts {
+    input: EcoString,
+    location: SrcSpan,
+    calls: Vec<TypedExpr>,
+}
+
+struct CallExpression<'a>{
+    expression: &'a TypedExpr,
+    location: u32
 }
