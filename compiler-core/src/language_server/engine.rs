@@ -286,7 +286,7 @@ where
             let codeaction_params = &params.code_action_params;
             let location_to_be_resolved = params.location;
 
-            let start    = line_numbers.byte_index(codeaction_params.range.start.line, codeaction_params.range.start.character);
+            let start = line_numbers.byte_index(codeaction_params.range.start.line, codeaction_params.range.start.character);
             let end = line_numbers.byte_index(codeaction_params.range.end.line, codeaction_params.range.end.character);
 
             let nodes = collect_statement_and_expression_nodes_from_ast(start, end, module);
@@ -780,7 +780,7 @@ fn collect_statement_and_expression_nodes_from_ast<'a>(
                             nodes.push(located);
                             i = expr.location().end
                         }
-                        Statement::Assignment(assignment) if matches_assignment_pattern(&assignment) => {
+                        Statement::Assignment(assignment) => {
                             nodes.push(located);
                             i = assignment.location.end
                         }
@@ -797,12 +797,4 @@ fn collect_statement_and_expression_nodes_from_ast<'a>(
         i += 1;
     }
     nodes
-}
-
-fn matches_assignment_pattern(assignment: &Assignment<Arc<Type>, TypedExpr>) -> bool {
-    if let Pattern::Variable {  .. } = assignment.pattern {
-        true
-    } else {
-        false
-    }
 }

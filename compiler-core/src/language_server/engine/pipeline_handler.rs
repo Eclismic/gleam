@@ -4,38 +4,22 @@ use crate::{ast::SrcSpan, language_server::code_action::ActionId};
 
 use super::*;
 
-pub fn convert_to_pipeline(
+pub fn convert_to_pipeline<'a>(
     module: &Module,
     params: &lsp::CodeActionParams,
     actions: &mut Vec<CodeAction>,
     strategy: ResolveStrategy,
-    nodes: &Vec<Located<'_>>
+    nodes: &Vec<Located<'a>>
 ) {
     //let before = Instant::now();
 
     let uri = &params.text_document.uri;
     let line_numbers = LineNumbers::new(&module.code);
 
-    nodes.iter().filter_map(|node| {
-
-        match node{
-            Located::Expression(expr) => {
-                if let TypedExpr::Call { .. } = expr {
-                    Some(CallExpression{ expression: expr, location: expr.location().start })
-                } else{
-                    None
-                }
-            },
-            Located::Statement(Statement::Assignment(assign)) =>{
-                if let TypedExpr::Call {..} = *assign.value{
-                    Some(CallExpression{ expression: &*assign.value, location: assign.value.location().start })
-                } else{
-                    None
-                }
-            }
-            _ => None
-        }
-    }).for_each(|call| {
+    nodes
+    .iter()
+    .filter_map(|node| extract_call_expression(node))
+    .for_each(|call| {
         let mut call_chain: Vec<&TypedExpr> = Vec::new();
 
         detect_call_chain(call.expression, &mut call_chain);
@@ -74,6 +58,26 @@ pub fn convert_to_pipeline(
         }
     });
 
+}
+
+fn extract_call_expression<'a>(node: &Located<'a>) -> Option<CallExpression<'a>> {
+    match node{
+        Located::Expression(expr) => {
+            if let TypedExpr::Call { .. } = expr {
+                Some(CallExpression{ expression: expr, location: expr.location().start })
+            } else{
+                None
+            }
+        },
+        Located::Statement(Statement::Assignment(assign)) =>{
+            if let TypedExpr::Call {..} = *assign.value{
+                Some(CallExpression{ expression: &*assign.value, location: assign.value.location().start })
+            } else{
+                None
+            }
+        }
+        _ => None
+    }
 }
 
 fn detect_call_chain<'a>(
