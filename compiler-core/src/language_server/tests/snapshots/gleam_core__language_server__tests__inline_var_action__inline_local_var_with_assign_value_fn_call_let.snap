@@ -1,12 +1,12 @@
 ---
 source: compiler-core/src/language_server/tests/inline_var_action.rs
-expression: "\nimport list\n\nfn main() {\n  let q = list.reverse([1, 2, 3])\n  let z = list.reverse(q)\n}\n    "
+expression: "\nimport test_mod\n\nfn main() {\n  let q = test_mod.reverse([1, 2, 3])\n  let z = test_mod.reverse(q)\n}\n    "
 ---
 
-import list
+import test_mod
 
 fn main() {
   
-  let z = list.reverse(list.reverse([1, 2, 3]))
+  let z = test_mod.reverse(test_mod.reverse([1, 2, 3]))
 }
     

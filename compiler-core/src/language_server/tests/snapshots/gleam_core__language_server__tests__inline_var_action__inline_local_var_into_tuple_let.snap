@@ -1,9 +1,9 @@
 ---
 source: compiler-core/src/language_server/tests/inline_var_action.rs
-expression: "\nimport list\n\nfn main() {\n  let x = #(1, 2, 3)\n  let res = #(x, #(4, 5, 6))\n}\n    "
+expression: "\nimport test_mod\n\nfn main() {\n  let x = #(1, 2, 3)\n  let res = #(x, #(4, 5, 6))\n}\n    "
 ---
 
-import list
+import test_mod
 
 fn main() {
   

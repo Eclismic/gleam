@@ -519,7 +519,14 @@ impl TypedExpr {
         match self {
             TypedExpr::Int { value, .. } => Some(value.clone()),
             TypedExpr::Float { value, .. } => Some(value.clone()),
-            TypedExpr::String { value, .. } => Some(value.clone()),
+            TypedExpr::String { value, .. } => {
+                let mut str = EcoString::new();
+                str.push_str("\"");
+                str.push_str(value.clone().as_str());
+                str.push_str("\"");
+
+                Some(str)
+            },
             TypedExpr::Var { name, .. } => Some(name.clone()),
             TypedExpr::List {
                 location: _,

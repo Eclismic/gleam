@@ -1,0 +1,13 @@
+---
+source: compiler-core/src/language_server/tests/inline_var_action.rs
+assertion_line: 276
+expression: "\nimport test_mod\n\nfn main() {\n  let x = \"Hello, Joe\"\n  test_mod.is_empty(x)\n}\n    "
+---
+
+import test_mod
+
+fn main() {
+  
+  test_mod.is_empty("Hello, Joe")
+}
+    

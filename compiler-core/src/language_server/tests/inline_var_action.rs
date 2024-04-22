@@ -30,7 +30,7 @@ fn inline_variable_refactor(
     let mut engine = setup_engine(&io);
 
     _ = io.src_module(
-        "list",
+        "test_mod",
         r#"
             pub fn map(list: List(a), with fun: fn(a) -> b) -> List(b) {
                 do_map(list, fun, [])
@@ -76,7 +76,12 @@ fn inline_variable_refactor(
                     [item, ..rest] -> do_reverse_acc(rest, [item, ..accumulator])
                 }
             }
+            
             pub fn is_ok() {}
+
+            pub fn is_empty(str: String) -> Bool {
+                str == ""
+            }
         "#,
     );
 
@@ -132,14 +137,14 @@ fn inline_variable_refactor(
 fn test_inline_local_var_into_multiple_call_let() {
     assert_code_action!(
         r#"
-import list
+import test_mod
 
 fn main() {
   let x = [1,2,3]
-  let y = list.reverse(x)
-  let z = list.reverse(x)
-  let u = list.reverse(x)
-  let v = list.reverse(x)
+  let y = test_mod.reverse(x)
+  let z = test_mod.reverse(x)
+  let u = test_mod.reverse(x)
+  let v = test_mod.reverse(x)
 }
     "#,
         Position::new(4, 6),
@@ -151,14 +156,14 @@ fn main() {
 fn test_inline_local_var_into_pipeline_let() {
     assert_code_action!(
         r#"
-import list
+import test_mod
 
 fn main() {
   let x = [1,2,3]
   let result =
   x
-  |> list.reverse()
-  |> list.map(fn(x) { x * 2})
+  |> test_mod.reverse()
+  |> test_mod.map(fn(x) { x * 2})
 }
     "#,
         Position::new(4, 6),
@@ -170,7 +175,7 @@ fn main() {
 fn test_inline_local_var_into_bin_op_let() {
     assert_code_action!(
         r#"
-import list
+import test_mod
 
 fn main() {
   let x = 1
@@ -186,7 +191,7 @@ fn main() {
 fn test_inline_local_var_into_tuple_let() {
     assert_code_action!(
         r#"
-import list
+import test_mod
 
 fn main() {
   let x = #(1, 2, 3)
@@ -202,12 +207,12 @@ fn main() {
 fn test_inline_local_var_inside_block_let() {
     assert_code_action!(
         r#"
-import list
+import test_mod
 
 fn main() {
   {
     let x = [1, 2, 3]
-    list.reverse(x)
+    test_mod.reverse(x)
   }
 }
     "#,
@@ -220,11 +225,11 @@ fn main() {
 fn test_inline_local_var_inside_block_with_let_outside_block_let() {
     assert_code_action!(
         r#"
-import list
+import test_mod
 
 fn main() {
   let x = [1, 2, 3]
-  { list.reverse(x) }
+  { test_mod.reverse(x) }
 }
     "#,
         Position::new(4, 6),
@@ -236,7 +241,7 @@ fn main() {
 fn test_inline_local_var_into_list_let() {
     assert_code_action!(
         r#"
-import list
+import test_mod
 
 fn main() {
   let x = 2
@@ -252,12 +257,12 @@ fn main() {
 fn test_inline_local_var_into_fn_body_let() {
     assert_code_action!(
         r#"
-import list
+import test_mod
 
 fn main() {
   let y = 2
   let func = fn(x) { x + y }
-  list.map([1, 2, 3], func)
+  test_mod.map([1, 2, 3], func)
 }
     "#,
         Position::new(4, 6),
@@ -265,12 +270,28 @@ fn main() {
     );
 }
 
-//Different let values
+// //Different let values
+#[test]
+fn test_inline_local_var_with_assign_value_string_let() {
+    assert_code_action!(
+        r#"
+import test_mod
+
+fn main() {
+  let x = "Hello, Joe"
+  test_mod.is_empty(x)
+}
+    "#,
+        Position::new(4, 6),
+        Position::new(4, 7)
+    );
+}
+
 #[test]
 fn test_inline_local_var_with_assign_value_bin_op_let() {
     assert_code_action!(
         r#"
-import list
+import test_mod
 
 fn main() {
   let x = 1 + 2
@@ -286,7 +307,7 @@ fn main() {
 fn test_inline_local_var_with_assign_val_tuple_let() {
     assert_code_action!(
         r#"
-import list
+import test_mod
 
 fn main() {
   let y = #(1, 2, 3)
@@ -302,11 +323,11 @@ fn main() {
 fn test_inline_local_var_with_assign_value_fn_call_let() {
     assert_code_action!(
         r#"
-import list
+import test_mod
 
 fn main() {
-  let q = list.reverse([1, 2, 3])
-  let z = list.reverse(q)
+  let q = test_mod.reverse([1, 2, 3])
+  let z = test_mod.reverse(q)
 }
     "#,
         Position::new(4, 6),
@@ -318,7 +339,7 @@ fn main() {
 fn test_inline_local_var_with_assign_value_var_op_let() {
     assert_code_action!(
         r#"
-import list
+import test_mod
 
 fn main() {
   let u = 1 + 2
@@ -335,11 +356,11 @@ fn main() {
 fn test_inline_local_var_into_expression_let() {
     assert_code_action!(
         r#"
-import list
+import test_mod
 
 fn main() {
   let x = [1, 2, 3]
-  list.reverse(x)
+  test_mod.reverse(x)
 }
     "#,
         Position::new(4, 6),
@@ -353,16 +374,16 @@ fn test_inline_local_var_no_delete_let_usage() {
     cov_mark::check!(do_not_delete_let);
     assert_code_action!(
         r#"
-import list
+import test_mod
 
 fn main() {
   let x = [1, 2, 3]
-  list.reverse(x)
-  list.reverse(x)
+  test_mod.reverse(x)
+  test_mod.reverse(x)
 }
     "#,
-        Position::new(5, 15),
-        Position::new(5, 16)
+        Position::new(5, 19),
+        Position::new(5, 20)
     );
 }
 
@@ -370,15 +391,15 @@ fn main() {
 fn test_inline_local_var_func_arg_usage() {
     assert_code_action!(
         r#"
-import list
+import test_mod
 
 fn main() {
   let x = [1,2,3]
-  let result = list.reverse(x)
+  let result = test_mod.reverse(x)
 }
     "#,
-        Position::new(5, 28),
-        Position::new(5, 29)
+        Position::new(5, 32),
+        Position::new(5, 33)
     );
 }
 
@@ -386,7 +407,7 @@ fn main() {
 fn test_inline_local_var_bin_op_usage() {
     assert_code_action!(
         r#"
-import list
+import test_mod
 
 fn main() {
   let x = 1
@@ -402,17 +423,17 @@ fn main() {
 fn test_inline_local_var_block_usage() {
     assert_code_action!(
         r#"
-import list
+import test_mod
 
 fn main() {
   {
     let x = [1, 2, 3]
-    list.reverse(x)
+    test_mod.reverse(x)
   }
 }
     "#,
-        Position::new(6, 17),
-        Position::new(6, 18)
+        Position::new(6, 21),
+        Position::new(6, 22)
     );
 }
 
@@ -420,15 +441,15 @@ fn main() {
 fn test_inline_local_var_block_outside_usage() {
     assert_code_action!(
         r#"
-import list
+import test_mod
 
 fn main() {
   let x = [1, 2, 3]
-  { list.reverse(x) }
+  { test_mod.reverse(x) }
 }
     "#,
-        Position::new(5, 17),
-        Position::new(5, 18)
+        Position::new(5, 21),
+        Position::new(5, 22)
     );
 }
 
@@ -436,7 +457,7 @@ fn main() {
 fn test_inline_local_var_list_usage() {
     assert_code_action!(
         r#"
-import list
+import test_mod
 
 fn main() {
   let x = 2
@@ -452,12 +473,12 @@ fn main() {
 fn test_inline_local_var_fn_body_usage() {
     assert_code_action!(
         r#"
-import list
+import test_mod
 
 fn main() {
   let y = 2
   let func = fn(x) { x + y }
-  list.map([1, 2, 3], func)
+  test_mod.map([1, 2, 3], func)
 }
         "#,
         Position::new(5, 25),
@@ -470,7 +491,7 @@ fn test_inline_local_var_do_not_inline_unused_var() {
     cov_mark::check!(do_not_inline_unused);
     assert_code_action!(
         r#"
-    import list
+    import test_mod
 
     fn main() {
       let x = 1
